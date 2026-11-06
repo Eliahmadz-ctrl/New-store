@@ -1,4 +1,4 @@
-import { clearCookie, configured, isOwner, json, newCookie, passwordMatches, rateLimit, sameOrigin } from "./_lib/security";
+import { clearCookie, configured, isOwner, json, newCookie, passwordMatches, rateLimit, sameOrigin } from "./_lib/security.js";
 
 export default async function handler(req: any, res: any) {
   if (req.method === "GET") return json(res, 200, { authenticated: isOwner(req) });

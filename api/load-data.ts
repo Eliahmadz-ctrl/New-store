@@ -1,5 +1,5 @@
 import { kv } from "@vercel/kv";
-import { isOwner, json } from "./_lib/security";
+import { isOwner, json } from "./_lib/security.js";
 
 const PUBLIC_KEYS = ["products", "iphones", "settings", "deliveryLocations"];
 const PRIVATE_KEYS = ["sales", "orders"];

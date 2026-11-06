@@ -1,7 +1,7 @@
 import { kv } from "@vercel/kv";
 import { randomUUID } from "node:crypto";
-import { products as defaultProducts, iPhones as defaultPhones, defaultDeliveryLocations, getVariants, type Product, type IPhoneModel, type DeliveryLocation } from "../src/data";
-import { isOwner, json, rateLimit, sameOrigin } from "./_lib/security";
+import { products as defaultProducts, iPhones as defaultPhones, defaultDeliveryLocations, getVariants, type Product, type IPhoneModel, type DeliveryLocation } from "../src/data.js";
+import { isOwner, json, rateLimit, sameOrigin } from "./_lib/security.js";
 
 // One atomic operation, so a dashboard status edit cannot erase a concurrent order.
 const INSERT = `local raw=redis.call('GET', KEYS[1]); local orders={}; if raw then orders=cjson.decode(raw) end; table.insert(orders, 1, cjson.decode(ARGV[1])); redis.call('SET', KEYS[1], cjson.encode(orders)); return 1`;

@@ -1,5 +1,5 @@
 import { kv } from "@vercel/kv";
-import { isOwner, json, sameOrigin } from "./_lib/security";
+import { isOwner, json, sameOrigin } from "./_lib/security.js";
 const ALLOWED = new Set(["products", "iphones", "settings", "sales", "deliveryLocations"]);
 export default async function handler(req: any, res: any) {
   if (req.method !== "POST") return json(res, 405, { error: "Method not allowed" });
