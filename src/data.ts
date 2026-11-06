@@ -19,6 +19,7 @@ export type Product = {
   image: string;
   inStock: number;
   description: string;
+  details?: string;
   badge?: string;
   variants: ColorVariant[];
   gallery?: MediaItem[];
@@ -32,6 +33,10 @@ export type IPhoneModel = {
   zmwPrice: number;
   shipping: number;
   total: number;
+  image?: string;
+  description?: string;
+  details?: string;
+  gallery?: MediaItem[];
 };
 
 export type BusinessSettings = {

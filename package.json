@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "tsx --test tests/*.test.ts"
+    "test": "tsx --test tests/*.test.ts tests/*.test.tsx"
   },
   "dependencies": {
     "@netlify/blobs": "^10.7.9",
@@ -20,10 +20,12 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "4.1.17",
+    "@testing-library/react": "^16.3.3",
     "@types/node": "22.19.17",
     "@types/react": "19.2.7",
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "5.1.1",
+    "jsdom": "^31.0.0",
     "tailwindcss": "4.1.17",
     "tsx": "^4.23.15",
     "typescript": "5.9.3",

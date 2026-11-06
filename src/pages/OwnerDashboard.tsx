@@ -13,6 +13,8 @@ import {
 } from "../data";
 
 import React from "react";
+import GalleryEditor from "../components/GalleryEditor";
+import { cleanGallery, validGallery } from "../lib/media";
 
 type OwnerTab = "overview" | "products" | "inventory" | "phones" | "orders" | "sales" | "roi" | "settings";
 type ProductDraft = Omit<Product, "id"> & { id?: string };
@@ -112,12 +114,13 @@ export default function OwnerDashboard({
   function saveProduct(e: FormEvent) {
     e.preventDefault();
     if (!productDraft?.name.trim()) return;
+    if (!validGallery(productDraft.gallery)) { alert("Use a valid image or direct video URL in the gallery."); return; }
     const cleaned: Product = {
       id: productDraft.id ?? safeId("product"), name: productDraft.name.trim(),
       category: productDraft.category.trim() || "General", unitCost: Number(productDraft.unitCost) || 0,
       shipping: Number(productDraft.shipping) || 0, unitPrice: Number(productDraft.unitPrice) || 0,
       image: productDraft.image.trim(), inStock: totalStock(productDraft as Product),
-      description: productDraft.description.trim(), badge: productDraft.badge?.trim() || undefined,
+      description: productDraft.description.trim(), details: productDraft.details?.trim() || undefined, gallery: cleanGallery(productDraft.gallery), badge: productDraft.badge?.trim() || undefined,
       variants: (productDraft.variants || []).filter((v) => v.color.trim()).map((v) => ({ color: v.color.trim(), stock: Math.max(0, Math.round(Number(v.stock) || 0)), image: v.image })),
     };
     if (!cleaned.variants.length) cleaned.variants = [{ color: "Default", stock: cleaned.inStock || 0, image: "" }];
@@ -139,7 +142,8 @@ export default function OwnerDashboard({
 
   function saveIPhone(e: FormEvent) {
     e.preventDefault(); if (!iPhoneDraft?.name.trim()) return;
-    const cleaned: IPhoneModel = { id: iPhoneDraft.id ?? safeId("iphone"), name: iPhoneDraft.name.trim(), condition: iPhoneDraft.condition, yuanPrice: Number(iPhoneDraft.yuanPrice) || 0, zmwPrice: Number(iPhoneDraft.zmwPrice) || 0, shipping: Number(iPhoneDraft.shipping) || 0, total: (Number(iPhoneDraft.zmwPrice) || 0) + (Number(iPhoneDraft.shipping) || 0) };
+    if (!validGallery(iPhoneDraft.gallery)) { alert("Use a valid image or direct video URL in the gallery."); return; }
+    const cleaned: IPhoneModel = { image: iPhoneDraft.image?.trim() || undefined, description: iPhoneDraft.description?.trim() || undefined, details: iPhoneDraft.details?.trim() || undefined, gallery: cleanGallery(iPhoneDraft.gallery), id: iPhoneDraft.id ?? safeId("iphone"), name: iPhoneDraft.name.trim(), condition: iPhoneDraft.condition, yuanPrice: Number(iPhoneDraft.yuanPrice) || 0, zmwPrice: Number(iPhoneDraft.zmwPrice) || 0, shipping: Number(iPhoneDraft.shipping) || 0, total: (Number(iPhoneDraft.zmwPrice) || 0) + (Number(iPhoneDraft.shipping) || 0) };
     setIPhones((c) => c.some((i) => i.id === cleaned.id) ? c.map((i) => i.id === cleaned.id ? cleaned : i) : [cleaned, ...c]);
     setIPhoneDraft(null); notify("Phone pricing saved");
   }
@@ -426,51 +430,10 @@ export default function OwnerDashboard({
                 {productDraft.image && <img src={productDraft.image} alt="" className="mt-2 h-20 w-20 rounded-xl object-cover" />}
               </Field>
               <div className="sm:col-span-2"><Field label="Description"><textarea value={productDraft.description} onChange={(e) => setProductDraft({ ...productDraft, description: e.target.value })} className={`${inputClass} min-h-20`} /></Field></div>
+              <div className="sm:col-span-2"><Field label="More product information (optional)"><textarea value={productDraft.details ?? ""} onChange={(e) => setProductDraft({ ...productDraft, details: e.target.value })} className={`${inputClass} min-h-24`} placeholder="Materials, features, sizing or care instructions" /></Field></div>
             </div>
 
-            {/* GALLERY EDITOR */}
-            <div className="mt-6 border-t border-gray-100 pt-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-black">Gallery (Images & Videos)</h3>
-                <button type="button" onClick={() => setProductDraft({ ...productDraft, gallery: [...(productDraft.gallery || []), { type: "image", url: "" }] })} className="rounded-full bg-[#1d1d1f] px-4 py-2 text-xs font-bold text-white">Add Media</button>
-              </div>
-              <div className="grid gap-4 sm:grid-cols-2">
-                {productDraft.gallery?.map((item, idx) => (
-                  <div key={idx} className="rounded-2xl border border-gray-100 bg-gray-50 p-4">
-                    <div className="flex gap-2 mb-3">
-                      <select value={item.type} onChange={(e) => {
-                        const gallery = [...(productDraft.gallery || [])];
-                        gallery[idx] = { ...gallery[idx], type: e.target.value as "image" | "video" };
-                        setProductDraft({ ...productDraft, gallery });
-                      }} className={inputClass}>
-                        <option value="image">Image</option>
-                        <option value="video">Video</option>
-                      </select>
-                      <button type="button" onClick={() => {
-                        const gallery = [...(productDraft.gallery || [])];
-                        gallery.splice(idx, 1);
-                        setProductDraft({ ...productDraft, gallery });
-                      }} className="rounded-2xl bg-red-50 px-4 text-xs font-bold text-red-600 whitespace-nowrap">Remove</button>
-                    </div>
-                    <Field label={`${item.type === "video" ? "Video" : "Image"} URL / Upload`}>
-                      <input value={item.url} onChange={(e) => {
-                        const gallery = [...(productDraft.gallery || [])];
-                        gallery[idx] = { ...gallery[idx], url: e.target.value };
-                        setProductDraft({ ...productDraft, gallery });
-                      }} className={inputClass} placeholder="URL" />
-                      <input type="file" accept={item.type === "video" ? "video/*" : "image/*"} onChange={async (e) => {
-                        if (e.target.files?.[0]) {
-                          const dataUrl = await imageToDataUrl(e.target.files[0]);
-                          const gallery = [...(productDraft.gallery || [])];
-                          gallery[idx] = { ...gallery[idx], url: dataUrl };
-                          setProductDraft({ ...productDraft, gallery });
-                        }
-                      }} className="mt-2 text-sm" />
-                    </Field>
-                  </div>
-                ))}
-              </div>
-            </div>
+            <GalleryEditor gallery={productDraft.gallery} update={fn => setProductDraft(current => current ? { ...current, gallery: fn(current.gallery || []) } : current)} />
 
             {/* VARIANT EDITOR */}
             <div className="mt-6 border-t border-gray-100 pt-6">
@@ -500,7 +463,7 @@ export default function OwnerDashboard({
       {/* PHONE EDITOR MODAL */}
       {iPhoneDraft && (
         <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/40 p-0 backdrop-blur-sm sm:items-center sm:p-6">
-          <form onSubmit={saveIPhone} className="w-full max-w-xl rounded-t-3xl bg-white p-6 shadow-2xl sm:rounded-3xl">
+          <form onSubmit={saveIPhone} className="w-full max-w-xl max-h-[90vh] overflow-y-auto rounded-t-3xl bg-white p-6 shadow-2xl sm:rounded-3xl">
             <div className="mb-5 flex items-center justify-between"><h2 className="text-2xl font-black">{iPhoneDraft.id ? "Edit Phone" : "New Phone"}</h2><button type="button" onClick={() => setIPhoneDraft(null)} className="rounded-full bg-gray-100 px-4 py-2 text-sm font-bold">Close</button></div>
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Model"><input required value={iPhoneDraft.name} onChange={(e) => setIPhoneDraft({ ...iPhoneDraft, name: e.target.value })} className={inputClass} /></Field>
@@ -510,6 +473,12 @@ export default function OwnerDashboard({
               <Field label="Shipping"><input type="number" step="0.01" value={iPhoneDraft.shipping} onChange={(e) => setIPhoneDraft({ ...iPhoneDraft, shipping: Number(e.target.value) })} className={inputClass} /></Field>
               <div className="rounded-2xl bg-gray-50 p-4"><p className="text-xs font-bold uppercase text-gray-400">Auto total</p><p className="mt-2 text-2xl font-black text-[#b08d57]">{money((Number(iPhoneDraft.zmwPrice) || 0) + (Number(iPhoneDraft.shipping) || 0))}</p></div>
             </div>
+            <div className="mt-5 space-y-4">
+              <Field label="Main image URL"><input value={iPhoneDraft.image ?? ""} onChange={e => setIPhoneDraft({ ...iPhoneDraft, image: e.target.value })} className={inputClass} placeholder="https://..." /></Field>
+              <Field label="Description"><textarea value={iPhoneDraft.description ?? ""} onChange={e => setIPhoneDraft({ ...iPhoneDraft, description: e.target.value })} className={inputClass} placeholder="Optional description" /></Field>
+              <Field label="More product information"><textarea value={iPhoneDraft.details ?? ""} onChange={e => setIPhoneDraft({ ...iPhoneDraft, details: e.target.value })} className={inputClass} placeholder="Features, condition or specifications" /></Field>
+            </div>
+            <GalleryEditor gallery={iPhoneDraft.gallery} update={fn => setIPhoneDraft(current => current ? { ...current, gallery: fn(current.gallery || []) } : current)} />
             <button type="submit" className="mt-6 w-full rounded-full bg-[#1d1d1f] py-4 text-sm font-black text-white">Save Phone</button>
           </form>
         </div>

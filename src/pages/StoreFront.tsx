@@ -10,6 +10,7 @@ import {
   variantImage,
   variantStock,
 } from "../data";
+import { cleanGallery } from "../lib/media";
 
 function K(n: number) {
   return `K${n.toLocaleString("en-ZM", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
@@ -38,9 +39,11 @@ function phoneProductFromIPhone(phone: IPhoneModel): Product {
     unitCost: phone.total,
     shipping: phone.shipping,
     unitPrice: phone.total,
-    image: "https://images.pexels.com/photos/788946/pexels-photo-788946.jpeg?auto=compress&cs=tinysrgb&fit=crop&h=600&w=600",
+    image: phone.image || "https://images.pexels.com/photos/788946/pexels-photo-788946.jpeg?auto=compress&cs=tinysrgb&fit=crop&h=600&w=600",
     inStock: 10,
-    description: `${phone.name} in ${phone.condition} condition.`,
+    description: phone.description || `${phone.name} in ${phone.condition} condition.`,
+    details: phone.details,
+    gallery: phone.gallery,
     badge: phone.condition,
     variants: [
       { color: "Black", stock: 3, image: "" },
@@ -73,6 +76,8 @@ export default function StoreFront({
   const [mobileMenu, setMobileMenu] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [selectedColor, setSelectedColor] = useState("Default");
+  const [mediaIndex, setMediaIndex] = useState(0);
+  const mediaRef = useRef<HTMLDivElement>(null);
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [customerEmail, setCustomerEmail] = useState("");
@@ -165,6 +170,7 @@ export default function StoreFront({
   }
 
   function openProduct(product: Product) {
+    setMediaIndex(0);
     setSelectedProduct(product);
     setSelectedColor(getVariants(product)[0].color);
   }
@@ -212,6 +218,12 @@ export default function StoreFront({
     setTimeout(() => setOwnerClicks(0), 3000);
   }
 
+  function goToMedia(index: number) {
+    const element = mediaRef.current;
+    if (element) element.scrollTo({ left: index * element.clientWidth, behavior: "smooth" });
+    setMediaIndex(index);
+  }
+  const gallery = cleanGallery(selectedProduct?.gallery);
   const selectedVariants = selectedProduct ? getVariants(selectedProduct) : [];
   const selectedVariant = selectedVariants.find((v) => v.color === selectedColor);
   const modalImage = selectedProduct
@@ -309,6 +321,7 @@ export default function StoreFront({
                   <p className="text-[10px] sm:text-xs text-gray-400 uppercase tracking-wider">{product.category}</p>
                   <h3 className="mt-1 text-sm sm:text-base font-semibold text-[#1a1a1a] leading-tight">{product.name}</h3>
                   <p className="mt-1 text-[11px] font-medium text-gray-400">{vars.map((v) => v.color).join(", ")}</p>
+                  <button type="button" onClick={(e) => { e.stopPropagation(); openProduct(product); }} className="mt-2 text-xs font-semibold underline text-gray-500">View details</button>
                   <div className="mt-2 flex items-center justify-between">
                     <span className="text-base sm:text-lg font-bold text-[#1a1a1a]">{K(product.unitPrice)}</span>
                     <button onClick={(e) => { e.stopPropagation(); addToCart(product, vars[0].color); }} className="w-8 h-8 sm:w-10 sm:h-10 flex items-center justify-center bg-[#1a1a1a] text-white rounded-full hover:opacity-80 transition-colors">
@@ -377,41 +390,41 @@ export default function StoreFront({
       {/* PRODUCT DETAIL MODAL */}
       {selectedProduct && (
         <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setSelectedProduct(null)}>
-          <div className="bg-white w-full sm:w-auto sm:max-w-lg sm:rounded-3xl rounded-t-3xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+          <div role="dialog" aria-modal="true" aria-label={`${selectedProduct.name} details`} className="bg-white w-full sm:w-auto sm:max-w-lg sm:rounded-3xl rounded-t-3xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
               <div className="relative aspect-square sm:aspect-[4/3] overflow-hidden sm:rounded-t-3xl bg-gray-100">
-              <div className="flex overflow-x-auto snap-x snap-mandatory h-full scrollbar-hide">
+              <div ref={mediaRef} onScroll={(e) => { const el = e.currentTarget; if (el.clientWidth) setMediaIndex(Math.round(el.scrollLeft / el.clientWidth)); }} className="flex overflow-x-auto snap-x snap-mandatory h-full scrollbar-hide">
                 <div className="snap-start w-full flex-shrink-0 h-full">
                   <img src={modalImage} alt={selectedProduct.name} className="w-full h-full object-cover" />
                 </div>
-                {selectedProduct.gallery?.map((media, idx) => (
+                {gallery.map((media, idx) => (
                   <div key={idx} className="snap-start w-full flex-shrink-0 h-full">
                     {media.type === "video" ? (
-                      <video src={media.url} controls className="w-full h-full object-cover" />
+                      <video src={media.url} controls playsInline preload="metadata" className="w-full h-full object-contain bg-black" />
                     ) : (
-                      <img src={media.url} alt="" className="w-full h-full object-cover" />
+                      <img src={media.url} alt={`${selectedProduct.name} photo ${idx + 2}`} className="w-full h-full object-cover" />
                     )}
                   </div>
                 ))}
               </div>
               
-              <button onClick={() => setSelectedProduct(null)} className="absolute top-4 right-4 w-10 h-10 bg-white/90 backdrop-blur rounded-full flex items-center justify-center z-10">
+              <button aria-label="Close product details" onClick={() => setSelectedProduct(null)} className="absolute top-4 right-4 w-10 h-10 bg-white/90 backdrop-blur rounded-full flex items-center justify-center z-10">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
               </button>
               {selectedProduct.badge && <span className="absolute top-4 left-4 px-3 py-1 text-white text-xs font-bold uppercase tracking-wider rounded-full z-10" style={{ backgroundColor: accent }}>{selectedProduct.badge}</span>}
               
-              {(selectedProduct.gallery?.length ?? 0) > 0 && (
-                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-1.5 z-10">
-                   <div className="w-1.5 h-1.5 rounded-full bg-white shadow-sm"></div>
-                   {selectedProduct.gallery?.map((_, idx) => (
-                     <div key={idx} className="w-1.5 h-1.5 rounded-full bg-white/50"></div>
-                   ))}
+              {gallery.length > 0 && <>
+                {mediaIndex > 0 && <button type="button" aria-label="Previous photo or video" onClick={() => goToMedia(mediaIndex - 1)} className="absolute left-3 top-1/2 -translate-y-1/2 z-10 rounded-full bg-white/90 w-10 h-10 font-bold text-xl shadow">‹</button>}
+                {mediaIndex < gallery.length && <button type="button" aria-label="Next photo or video" onClick={() => goToMedia(mediaIndex + 1)} className="absolute right-3 top-1/2 -translate-y-1/2 z-10 rounded-full bg-white/90 w-10 h-10 font-bold text-xl shadow">›</button>}
+                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-1 z-10 rounded-full bg-black/40 px-2 py-1">
+                  {[0, ...gallery.map((_, idx) => idx + 1)].map(index => <button key={index} type="button" aria-label={`View media ${index + 1}`} aria-pressed={mediaIndex === index} onClick={() => goToMedia(index)} className="w-6 h-6 flex items-center justify-center"><span className={`w-2 h-2 rounded-full ${mediaIndex === index ? "bg-white" : "bg-white/50"}`} /></button>)}
                 </div>
-              )}
+              </>}
             </div>
             <div className="p-6 sm:p-8">
               <p className="text-xs text-gray-400 uppercase tracking-wider">{selectedProduct.category}</p>
               <h3 className="mt-1 text-2xl font-semibold">{selectedProduct.name}</h3>
-              <p className="mt-3 text-gray-500 leading-relaxed">{selectedProduct.description}</p>
+              <p className="mt-3 text-gray-500 leading-relaxed whitespace-pre-line">{selectedProduct.description}</p>
+              {selectedProduct.details && <section className="mt-5 border-t border-gray-100 pt-5"><h4 className="text-sm font-bold">Product information</h4><p className="mt-2 text-sm text-gray-600 leading-relaxed whitespace-pre-line">{selectedProduct.details}</p></section>}
 
               {/* Colour options with per-colour stock */}
               <div className="mt-5">
