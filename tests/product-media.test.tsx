@@ -75,7 +75,11 @@ test("owner can save product and phone galleries and shoppers can open them", as
     assert.equal(dialog.getByRole("button", { name: "View media 2" }).getAttribute("aria-pressed"), "true");
     assert.equal(dialog.getByText("Product information").textContent, "Product information");
     assert.equal(shop.container.querySelector("video")?.getAttribute("src"), "https://example.com/clip.mp4");
-    fireEvent.click(dialog.getByRole("button", { name: /Add .* to Cart/ }));
+    const white = dialog.getByRole("button", { name: /White.*left/ });
+    fireEvent.click(white);
+    assert.equal(white.getAttribute("aria-pressed"), "true");
+    assert.ok(dialog.getByRole("button", { name: /Add White to Cart/ }));
+    fireEvent.click(dialog.getByRole("button", { name: /Add White to Cart/ }));
     assert.ok(dialog.getByRole("button", { name: "Bag (1)" }));
     fireEvent.click(dialog.getByRole("button", { name: /Back to shop/ }));
     fireEvent.click(shop.getAllByRole("button", { name: "View details" })[1]);

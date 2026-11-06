@@ -56,6 +56,15 @@ function phoneProductFromIPhone(phone: IPhoneModel): Product {
   };
 }
 
+function swatchFor(name: string): string | undefined {
+  const colors: Record<string, string> = {
+    black: "#252322", white: "#f9f7f2", grey: "#929290", gray: "#929290", red: "#b93c3a",
+    blue: "#496a8c", navy: "#283b59", pink: "#e8b3b7", purple: "#8b6f94", silver: "#c7c8ca",
+    gold: "#c5a469", brown: "#8a5c45", cherry: "#84373e", clear: "#e7e7e1",
+  };
+  return colors[name.trim().toLowerCase()];
+}
+
 function ProductPhoto({ src, alt, closeup = false }: { src: string; alt: string; closeup?: boolean }) {
   const [failed, setFailed] = useState(false);
   useEffect(() => { setFailed(false); }, [src]);
@@ -194,6 +203,7 @@ export default function StoreFront({
 
   function openProduct(product: Product) {
     setMediaIndex(0);
+    mediaRef.current?.scrollTo({ left: 0 });
     setSelectedProduct(product);
     setSelectedColor(getVariants(product)[0].color);
     window.history.pushState(null, "", `#product/${encodeURIComponent(product.id)}`);
@@ -424,35 +434,37 @@ export default function StoreFront({
 
       {/* PRODUCT DETAILS PAGE */}
       {selectedProduct && (
-        <main aria-label={`${selectedProduct.name} details`} className="min-h-screen bg-[#faf9f7]">
-          <div className="border-b border-black/5 bg-white">
-            <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 sm:px-8">
-              <button type="button" onClick={closeProduct} className="rounded-full border border-gray-200 px-4 py-2 text-sm font-semibold hover:bg-gray-50">← Back to shop</button>
-              <span className="text-sm font-semibold tracking-[0.2em]">ELIAH <span style={{ color: accent }}>&amp;</span> CO</span>
-              <button type="button" onClick={() => setCartOpen(true)} className="rounded-full bg-[#1a1a1a] px-4 py-2 text-sm font-semibold text-white">Bag ({cartCount})</button>
+        <main aria-label={`${selectedProduct.name} details`} className="min-h-screen bg-[#faf8f5]">
+          <div className="sticky top-0 z-40 border-b border-[#eae4dc] bg-white/90 backdrop-blur-xl">
+            <div className="mx-auto flex max-w-7xl items-center justify-between gap-2 px-4 py-3 sm:px-8 sm:py-4">
+              <button type="button" onClick={closeProduct} className="group flex items-center gap-2 rounded-full border border-[#e8e1d8] bg-white px-3 py-2.5 text-xs font-semibold transition hover:border-[#b08d57] hover:bg-[#faf5ef] sm:px-5 sm:text-sm"><span aria-hidden="true" className="text-base transition-transform group-hover:-translate-x-1">←</span> Back to shop</button>
+              <span className="hidden text-sm font-light tracking-[0.24em] sm:block">{settings.businessName.replace(" & Co.", "").replace("& Co.", "").toUpperCase()} <span style={{ color: accent }}>&amp;</span> CO</span>
+              <button type="button" onClick={() => setCartOpen(true)} className="rounded-full bg-[#1a1a1a] px-5 py-2.5 text-xs font-semibold text-white transition hover:bg-[#5c4a38] sm:text-sm">Bag ({cartCount})</button>
             </div>
           </div>
-          <div className="mx-auto max-w-7xl px-4 pb-20 pt-7 sm:px-8 sm:pt-12">
-            <p className="mb-6 text-xs font-medium uppercase tracking-[0.18em] text-gray-400">Shop / {selectedProduct.category} / <span className="text-gray-700">{selectedProduct.name}</span></p>
-            <div className="grid gap-8 lg:grid-cols-[1.1fr_0.9fr] lg:gap-14">
-              <div>
-                <div className="relative aspect-square overflow-hidden rounded-3xl bg-[#eeeae5] sm:aspect-[4/3]">
+          <div className="detail-entrance mx-auto max-w-7xl px-4 pb-20 pt-6 sm:px-8 sm:pt-9">
+            <p className="mb-6 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#a49b90] sm:mb-8 sm:text-xs">Shop <span className="mx-1 text-[#d1c4b1]">/</span> {selectedProduct.category} <span className="mx-1 text-[#d1c4b1]">/</span> <span className="text-[#6d5d4c]">{selectedProduct.name}</span></p>
+            <div className="grid gap-8 lg:grid-cols-[1.05fr_0.95fr] lg:items-start lg:gap-12 xl:gap-16">
+              <div className="min-w-0 lg:sticky lg:top-24">
+                <div className="relative aspect-square overflow-hidden rounded-[1.75rem] bg-[#eeeae5] shadow-[0_18px_50px_rgba(56,39,22,0.10)] sm:rounded-[2.25rem] sm:aspect-[4/3]">
                   <div ref={mediaRef} onScroll={(e) => { const el = e.currentTarget; if (el.clientWidth) setMediaIndex(Math.round(el.scrollLeft / el.clientWidth)); }} className="flex h-full overflow-x-auto snap-x snap-mandatory scrollbar-hide">
                     <div className="snap-start w-full flex-shrink-0 h-full"><ProductPhoto src={modalImage} alt={selectedProduct.name} /></div>
                     {displayGallery.map((media, idx) => (
                       <div key={idx} className="relative snap-start w-full flex-shrink-0 h-full overflow-hidden">
                         {media.type === "video" ? <video src={media.url} controls playsInline preload="metadata" aria-label={`${selectedProduct.name} video`} className="w-full h-full object-contain bg-[#eeeae5]" /> : <ProductPhoto src={"closeup" in media ? modalImage : media.url} alt={"closeup" in media ? `${selectedProduct.name} close-up of main photo` : media.example ? `${selectedProduct.category} illustrative example, not the actual item` : `${selectedProduct.name} photo ${idx + 2}`} closeup={"closeup" in media} />}
-                        {"example" in media && media.example && <span className="absolute bottom-3 left-3 rounded-full bg-white/95 px-3 py-1 text-xs font-semibold text-gray-700">Illustrative example · not the actual item</span>}
+                        {"example" in media && media.example && <span className="absolute bottom-3 left-3 max-w-[70%] rounded-full bg-white/95 px-3 py-2 text-[10px] font-semibold text-gray-700 sm:text-xs">Illustrative example · not the actual item</span>}
                       </div>
                     ))}
                   </div>
-                  {selectedProduct.badge && <span className="absolute top-4 left-4 rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wider text-white" style={{ backgroundColor: accent }}>{selectedProduct.badge}</span>}
-                  {mediaIndex > 0 && <button type="button" aria-label="Previous photo or video" onClick={() => goToMedia(mediaIndex - 1)} className="absolute left-3 top-1/2 -translate-y-1/2 rounded-full bg-white/95 w-10 h-10 font-bold text-xl shadow">‹</button>}
-                  {mediaIndex < displayGallery.length && <button type="button" aria-label="Next photo or video" onClick={() => goToMedia(mediaIndex + 1)} className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full bg-white/95 w-10 h-10 font-bold text-xl shadow">›</button>}
+                  {selectedProduct.badge && <span className="absolute top-4 left-4 rounded-full px-4 py-2 text-[10px] font-bold uppercase tracking-[0.14em] text-white shadow-lg sm:top-6 sm:left-6" style={{ backgroundColor: accent }}>{selectedProduct.badge}</span>}
+                  {mediaIndex > 0 && <button type="button" aria-label="Previous photo or video" onClick={() => goToMedia(mediaIndex - 1)} className="absolute left-3 top-1/2 -translate-y-1/2 rounded-full bg-white/95 w-10 h-10 font-bold text-xl shadow transition hover:scale-110 sm:left-5">‹</button>}
+                  {mediaIndex < displayGallery.length && <button type="button" aria-label="Next photo or video" onClick={() => goToMedia(mediaIndex + 1)} className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full bg-white/95 w-10 h-10 font-bold text-xl shadow transition hover:scale-110 sm:right-5">›</button>}
+                  <span aria-hidden="true" className="pointer-events-none absolute bottom-4 right-4 rounded-full bg-[#1a1a1a]/70 px-3 py-1.5 text-[10px] font-semibold tracking-wider text-white backdrop-blur-sm">{String(mediaIndex + 1).padStart(2, "0")} / {String(displayGallery.length + 1).padStart(2, "0")}</span>
                 </div>
-                <div className="mt-4 flex gap-3 overflow-x-auto pb-2" aria-label="Product media">
+                <div className="mt-5 flex items-center justify-between gap-4"><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#97836c]">A closer look</p><p className="text-xs text-[#a49b90]">Tap or swipe to explore</p></div>
+                <div className="mt-3 flex gap-3 overflow-x-auto pb-2" aria-label="Product media">
                   {[{ type: "image" as const, url: modalImage }, ...displayGallery].map((media, index) => (
-                    <button key={index} type="button" aria-label={`View media ${index + 1}`} aria-pressed={mediaIndex === index} onClick={() => goToMedia(index)} className={`relative h-20 w-20 flex-shrink-0 overflow-hidden rounded-xl border-2 ${mediaIndex === index ? "border-[#1a1a1a]" : "border-transparent"}`}>
+                    <button key={index} type="button" aria-label={`View media ${index + 1}`} aria-pressed={mediaIndex === index} onClick={() => goToMedia(index)} className={`relative h-20 w-20 flex-shrink-0 overflow-hidden rounded-2xl border-2 transition hover:-translate-y-1 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b08d57] ${mediaIndex === index ? "border-[#1a1a1a] shadow-md" : "border-transparent opacity-75 hover:opacity-100"}`}>
                       {media.type === "video" ? <span className="flex h-full w-full items-center justify-center bg-[#e8e2da] text-2xl">▶</span> : <ProductPhoto src={"closeup" in media ? modalImage : media.url} alt="" closeup={"closeup" in media} />}
                       {"example" in media && media.example && <span className="absolute bottom-0 left-0 right-0 bg-white/95 text-[9px] font-bold text-gray-700">Example</span>}
                     </button>
@@ -460,29 +472,31 @@ export default function StoreFront({
                 </div>
                 {!gallery.length && <p className="mt-1 text-xs text-gray-500">The second view is a close-up of the main photo.</p>}
               </div>
-              <div className="lg:py-2">
-                <p className="text-xs font-semibold uppercase tracking-[0.2em]" style={{ color: accent }}>{selectedProduct.category}</p>
-                <h1 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">{selectedProduct.name}</h1>
-                <p className="mt-3 text-2xl font-bold">{K(selectedProduct.unitPrice)}</p>
-                <p className="mt-5 leading-relaxed text-gray-600 whitespace-pre-line">{selectedProduct.description || "Contact us to learn more about this item."}</p>
-                {(selectedProduct.details ?? starterProductDetails(selectedProduct)) && <section className="mt-7 rounded-2xl bg-white p-5 border border-gray-100"><h2 className="text-sm font-bold uppercase tracking-[0.14em]">Product information</h2><p className="mt-3 text-sm leading-relaxed text-gray-600 whitespace-pre-line">{selectedProduct.details ?? starterProductDetails(selectedProduct)}</p></section>}
-                <div className="mt-7">
-                  <h2 className="mb-3 text-xs font-bold uppercase tracking-[0.16em] text-gray-500">Choose an option &amp; view stock</h2>
+
+              <div className="min-w-0 rounded-[1.75rem] border border-white bg-white p-6 shadow-[0_14px_55px_rgba(76,53,27,0.06)] sm:rounded-[2.25rem] sm:p-9">
+                <div className="flex items-center gap-3"><span className="h-px w-8" style={{ backgroundColor: accent }} /><p className="text-[10px] font-bold uppercase tracking-[0.25em]" style={{ color: accent }}>{selectedProduct.category} · {settings.businessName}</p></div>
+                <h1 className="mt-5 font-serif text-4xl leading-[1.05] tracking-tight text-[#24201c] sm:text-5xl">{selectedProduct.name}</h1>
+                <div className="mt-5 flex flex-wrap items-center gap-3"><p className="text-2xl font-bold tracking-tight text-[#1a1a1a]">{K(selectedProduct.unitPrice)}</p><span className="rounded-full bg-[#f6f0e8] px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-[#947754]">Zambian Kwacha</span></div>
+                <p className="mt-5 text-sm leading-7 text-[#736d67] whitespace-pre-line sm:text-base">{selectedProduct.description || "Contact us to learn more about this item."}</p>
+                {(selectedProduct.details ?? starterProductDetails(selectedProduct)) && <section className="mt-7 rounded-2xl border border-[#eee6dc] bg-[#fbf8f3] p-5"><div className="flex items-center gap-3"><span aria-hidden="true" className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-lg" style={{ color: accent }}>✦</span><h2 className="text-xs font-bold uppercase tracking-[0.14em]">Product information</h2></div><p className="mt-3 text-sm leading-relaxed text-[#736d67] whitespace-pre-line">{selectedProduct.details ?? starterProductDetails(selectedProduct)}</p></section>}
+                <div className="mt-8">
+                  <div className="mb-3 flex items-center justify-between gap-2"><h2 className="text-xs font-bold uppercase tracking-[0.16em] text-[#49413a]">Choose an option &amp; view stock</h2><span className="text-xs font-semibold" style={{ color: accent }}>{selectedColor}</span></div>
                   <div className="grid gap-2 sm:grid-cols-2">{selectedVariants.map((variant) => {
                     const active = selectedColor === variant.color;
                     const inCart = cart.find((i) => i.product.id === selectedProduct.id && i.color === variant.color)?.qty ?? 0;
-                    return <button key={variant.color} type="button" onClick={() => setSelectedColor(variant.color)} aria-pressed={active} className={`flex items-center justify-between gap-2 rounded-2xl border p-3 text-left ${active ? "border-[#1a1a1a] bg-white" : "border-gray-200 bg-white/50"}`}>
-                      <span className="flex items-center gap-2 text-sm font-bold">{variant.image && <img src={variant.image} alt="" className="h-10 w-10 rounded-lg object-cover" />}{variant.color}</span>
-                      <span className={`text-xs font-semibold ${variant.stock > 0 ? "text-green-700" : "text-red-600"}`}>{variant.stock} left{inCart ? ` · ${inCart} in bag` : ""}</span>
+                    const swatch = swatchFor(variant.color);
+                    return <button key={variant.color} type="button" onClick={() => setSelectedColor(variant.color)} aria-pressed={active} className={`flex min-h-14 items-center justify-between gap-2 rounded-2xl border p-3 text-left transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b08d57] ${active ? "border-[#b08d57] bg-[#faf5ed] shadow-sm" : "border-[#eeeae4] bg-white hover:border-[#d8c6ad]"}`}>
+                      <span className="flex min-w-0 items-center gap-2.5 text-sm font-bold">{variant.image ? <img src={variant.image} alt="" className="h-9 w-9 rounded-xl object-cover" /> : swatch ? <span aria-hidden="true" className="h-5 w-5 flex-shrink-0 rounded-full border border-black/10 shadow-sm" style={{ backgroundColor: swatch }} /> : <span aria-hidden="true" className="h-2 w-2 flex-shrink-0 rounded-full bg-[#c9b499]" />}{variant.color}</span>
+                      <span className={`shrink-0 text-[11px] font-semibold ${variant.stock > 0 ? "text-green-700" : "text-red-600"}`}>{variant.stock} left{inCart ? ` · ${inCart} in bag` : ""}</span>
                     </button>;
                   })}</div>
                 </div>
-                <div className="mt-6 flex items-center justify-between text-sm"><span className="font-semibold">{selectedColor}</span><span className={colorStock > 0 ? "text-green-700" : "text-red-600"}>{colorStock > 0 ? `${colorStock} available` : "Out of stock"}{cartQtyForColor > 0 ? ` (${cartQtyForColor} in bag)` : ""}</span></div>
-                <button disabled={colorStock <= 0} onClick={() => addToCart(selectedProduct, selectedColor)} className="mt-4 w-full rounded-full bg-[#1a1a1a] py-4 font-semibold text-white disabled:bg-gray-300">{colorStock > 0 ? `Add ${selectedColor} to Cart — ${K(selectedProduct.unitPrice)}` : "Out of stock"}</button>
-                <div className="mt-5 rounded-2xl bg-[#f0ebe4] p-5 text-sm text-gray-600"><h2 className="font-bold text-gray-800">Ordering &amp; delivery</h2><p className="mt-2">Choose your delivery location at checkout to see the applicable fee. Questions? <a className="underline" href={`https://wa.me/${cleanWhatsapp}`} target="_blank" rel="noreferrer">Contact us on WhatsApp</a>.</p></div>
+                <div className="mt-6 flex items-center justify-between gap-2 text-sm"><span className="font-semibold">{selectedColor}</span><span className={`rounded-full px-3 py-1.5 text-xs font-semibold ${colorStock > 0 ? "bg-[#edf6ee] text-green-700" : "bg-red-50 text-red-600"}`}>{colorStock > 0 ? `${colorStock} available` : "Out of stock"}{cartQtyForColor > 0 ? ` (${cartQtyForColor} in bag)` : ""}</span></div>
+                <button disabled={colorStock <= 0} onClick={() => addToCart(selectedProduct, selectedColor)} className="mt-4 w-full rounded-full bg-[#1a1a1a] px-4 py-4 font-semibold text-white shadow-lg shadow-black/10 transition hover:-translate-y-0.5 hover:bg-[#51402f] hover:shadow-xl focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b08d57] disabled:translate-y-0 disabled:bg-gray-300 disabled:shadow-none">{colorStock > 0 ? `Add ${selectedColor} to Cart — ${K(selectedProduct.unitPrice)}` : "Out of stock"}</button>
+                <div className="mt-6 flex gap-4 border-t border-[#f0ece6] pt-6 text-sm text-gray-600"><span aria-hidden="true" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#f5ede2] text-lg" style={{ color: accent }}>↗</span><div><h2 className="font-bold text-[#3a332c]">Ordering &amp; delivery</h2><p className="mt-1 leading-relaxed text-[#807970]">Choose your delivery location at checkout to see the applicable fee. Questions? <a className="font-semibold underline underline-offset-2" style={{ color: accent }} href={`https://wa.me/${cleanWhatsapp}`} target="_blank" rel="noreferrer">Contact us on WhatsApp</a>.</p></div></div>
               </div>
             </div>
-            {storefrontProducts.filter(p => p.id !== selectedProduct.id && p.category === selectedProduct.category).length > 0 && <section className="mt-16 border-t border-gray-200 pt-10"><h2 className="text-2xl font-semibold">You may also like</h2><p className="mt-1 text-sm text-gray-500">Explore more from {selectedProduct.category}.</p><div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3">{storefrontProducts.filter(p => p.id !== selectedProduct.id && p.category === selectedProduct.category).slice(0, 3).map(p => <button key={p.id} onClick={() => openProduct(p)} className="overflow-hidden rounded-2xl bg-white text-left border border-gray-100"><div className="aspect-square bg-gray-100"><ProductPhoto src={p.image} alt={p.name} /></div><div className="p-4"><p className="font-semibold">{p.name}</p><p className="mt-1 text-sm font-bold">{K(p.unitPrice)}</p></div></button>)}</div></section>}
+            {storefrontProducts.filter(p => p.id !== selectedProduct.id && p.category === selectedProduct.category).length > 0 && <section className="mt-16 border-t border-[#e7ded2] pt-10 sm:mt-24"><div className="flex flex-wrap items-end justify-between gap-3"><div><p className="text-[10px] font-bold uppercase tracking-[0.25em]" style={{ color: accent }}>The collection</p><h2 className="mt-2 font-serif text-3xl text-[#24201c] sm:text-4xl">You may also like</h2></div><p className="text-sm text-[#92877b]">Explore more from {selectedProduct.category} →</p></div><div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3 sm:gap-6">{storefrontProducts.filter(p => p.id !== selectedProduct.id && p.category === selectedProduct.category).slice(0, 3).map(p => <button key={p.id} onClick={() => openProduct(p)} className="group overflow-hidden rounded-[1.5rem] border border-[#eeeae4] bg-white text-left transition hover:-translate-y-1 hover:shadow-xl hover:shadow-[#5c4a38]/10"><div className="aspect-square overflow-hidden bg-gray-100"><div className="h-full transition duration-500 group-hover:scale-105"><ProductPhoto src={p.image} alt={p.name} /></div></div><div className="p-4 sm:p-5"><p className="text-[10px] font-semibold uppercase tracking-wider text-[#aa9780]">{p.category}</p><p className="mt-1 font-semibold">{p.name}</p><p className="mt-2 text-sm font-bold">{K(p.unitPrice)}</p></div></button>)}</div></section>}
           </div>
         </main>
       )}
