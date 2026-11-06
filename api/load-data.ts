@@ -1,4 +1,6 @@
 import { kv } from "@vercel/kv";
+import { expandDeliveryLocations, type DeliveryLocation } from "../src/data.js";
+import { initialNotificationStates } from "./_lib/notifications.js";
 import { isOwner, json } from "./_lib/security.js";
 
 const PUBLIC_KEYS = ["products", "iphones", "settings", "deliveryLocations"];
@@ -12,6 +14,8 @@ export default async function handler(req: any, res: any) {
     const entries = await Promise.all(keys.map(async (key) => [key, await kv.get<unknown>(key)] as const));
     const data: Record<string, unknown> = {};
     for (const [key, value] of entries) if (value != null) data[key] = value;
+    if (Array.isArray(data.deliveryLocations)) data.deliveryLocations = expandDeliveryLocations(data.deliveryLocations as DeliveryLocation[]);
+    if (owner) { const state = initialNotificationStates(); data.notificationsConfigured = { email: state.email === "pending", sms: state.sms === "pending" }; }
     // Keep purchase costs out of the public API response.
     if (!owner && Array.isArray(data.products)) data.products = data.products.map((p: any) => ({ ...p, unitCost: 0, shipping: 0 }));
     if (!owner && Array.isArray(data.iphones)) data.iphones = data.iphones.map((p: any) => ({ ...p, yuanPrice: 0, zmwPrice: 0, shipping: 0 }));

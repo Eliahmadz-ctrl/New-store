@@ -314,7 +314,7 @@ export default function OwnerDashboard({
         {/* ORDERS */}
         {tab === "orders" && (
           <section className="space-y-6">
-            <div><h1 className="text-3xl font-black">Website Orders</h1><p className="mt-1 text-sm text-gray-500">Customer orders submitted from the store cart.</p></div>
+            <div><h1 className="text-3xl font-black">Website Orders</h1><p className="mt-1 text-sm text-gray-500">Customer orders submitted from the store cart. Alert status shows provider acceptance, not confirmed delivery.</p></div>
             <div className="grid gap-4">{orders.length ? orders.map((o) => { const msg = encodeURIComponent(`Hi ${o.customerName}, re: your Eliah & Co. order. Total: ${money(o.total, 0)}.`); const ph = o.phone.replace(/[^0-9]/g, ""); return (
               <article key={o.id} className="rounded-3xl border border-gray-100 bg-white p-5 shadow-sm">
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -328,6 +328,7 @@ export default function OwnerDashboard({
                   </div>
                 </div>
                 <div className="mt-4 space-y-2">{o.items.map((i) => <div key={`${i.id}-${i.color}`} className="flex justify-between rounded-2xl bg-gray-50 p-3 text-sm"><span className="font-bold">{i.qty} x {i.name} <span className="text-gray-400">({i.color})</span></span><span className="font-black">{money(i.qty * i.price, 0)}</span></div>)}</div>
+                {o.notifications && <p className="mt-3 text-xs font-semibold text-gray-500">Order alerts — Email: {o.notifications.email} · SMS: {o.notifications.sms}</p>}
                 {o.note && <p className="mt-3 rounded-2xl bg-yellow-50 p-3 text-sm font-semibold text-yellow-800">Note: {o.note}</p>}
                 <div className="mt-3 rounded-2xl bg-blue-50 p-3 text-sm font-semibold text-blue-800">Delivery: {o.deliveryLocationName} (Fee: {o.deliveryFee === 0 ? "Free" : money(o.deliveryFee, 0)})</div>
                 <div className="mt-4 flex justify-between border-t border-gray-100 pt-4"><span className="text-sm font-bold text-gray-400">Grand Total</span><span className="text-2xl font-black text-[#b08d57]">{money(o.total, 0)}</span></div>

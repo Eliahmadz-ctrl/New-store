@@ -108,7 +108,7 @@ export default function StoreFront({
   const cartCount = cart.reduce((s, i) => s + i.qty, 0);
   const cartTotal = cart.reduce((s, i) => s + i.qty * i.product.unitPrice, 0);
   const selectedDelivery = deliveryLocations.find((d) => d.id === deliveryLocationId) || deliveryLocations[0];
-  const deliveryFee = selectedDelivery.fee;
+  const deliveryFee = selectedDelivery?.fee ?? 0;
   const grandTotal = cartTotal + deliveryFee;
   const accent = settings.accentColor || "#b08d57";
   const cleanWhatsapp = settings.whatsapp.replace(/[^0-9]/g, "");
@@ -122,7 +122,7 @@ export default function StoreFront({
       `*Customer:* ${customerName.trim() || "Not provided"}\n` +
       `*Phone:* ${customerPhone.trim() || "Not provided"}\n` +
       `*Email:* ${customerEmail.trim() || "Not provided"}\n` +
-      `*Delivery:* ${selectedDelivery.name}${deliveryFee > 0 ? ` (K${deliveryFee})` : " (Free)"}\n` +
+      `*Delivery:* ${(selectedDelivery?.name ?? "Unavailable")}${deliveryFee > 0 ? ` (K${deliveryFee})` : " (Free)"}\n` +
       `${orderNote.trim() ? `*Note:* ${orderNote.trim()}\n` : ""}\n` +
       `*Items:*\n${items}\n\n` +
       `*Subtotal:* ${K(cartTotal)}\n` +
@@ -171,6 +171,7 @@ export default function StoreFront({
 
   async function submitOrder() {
     if (!cart.length || orderSuccess || orderPending) return;
+    if (!selectedDelivery) { setOrderError("No delivery options are available. Please contact the store."); return; }
     if (!customerName.trim() || !customerPhone.trim()) { setOrderError("Please provide your name and phone number."); return; }
     setOrderError(""); setOrderPending(true);
     const order: CustomerOrder = {
@@ -178,12 +179,12 @@ export default function StoreFront({
       customerName: customerName.trim() || "Website customer",
       phone: customerPhone.trim(),
       email: customerEmail.trim(),
-      deliveryArea: selectedDelivery.name,
+      deliveryArea: (selectedDelivery?.name ?? "Unavailable"),
       note: orderNote.trim(),
       createdAt: new Date().toISOString(),
       status: "New",
       total: grandTotal,
-      deliveryLocationName: selectedDelivery.name,
+      deliveryLocationName: (selectedDelivery?.name ?? "Unavailable"),
       deliveryLocationId: selectedDelivery.id,
       deliveryFee: deliveryFee,
       items: cart.map((item) => ({
@@ -519,7 +520,7 @@ export default function StoreFront({
                         </div>
                         <div>
                           <label className="text-xs font-bold uppercase tracking-[0.14em] text-gray-400">Delivery Location</label>
-                          <select value={deliveryLocationId} onChange={(e) => setDeliveryLocationId(e.target.value)} className="mt-2 w-full rounded-2xl border border-gray-200 px-4 py-3 text-sm outline-none bg-white">
+                          <select value={selectedDelivery?.id ?? ""} onChange={(e) => setDeliveryLocationId(e.target.value)} className="mt-2 w-full rounded-2xl border border-gray-200 px-4 py-3 text-sm outline-none bg-white">
                             {deliveryLocations.map((loc) => (
                               <option key={loc.id} value={loc.id}>
                                 {loc.name} — {loc.fee === 0 ? "Free" : `K${loc.fee}`}

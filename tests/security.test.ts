@@ -19,6 +19,7 @@ const values: Record<string, unknown> = {
 };
 const hits: Record<string, number> = {};
 globalThis.fetch = (async (_url: any, init?: RequestInit) => {
+  if (String(_url).includes("api.resend.com") || String(_url).includes("api.twilio.com")) return new Response(null, { status: 503 });
   const cmds = JSON.parse(String(init?.body));
   function run(cmd: any[]) {
     const [name, key, value] = cmd;
@@ -81,4 +82,23 @@ test("orders check server-side price, stock, delivery and owner-only edits", asy
   res = response(); await orders(req("POST", { ...order, items: [{ ...order.items[0], qty: 5 }] }), res); assert.equal(res.code, 409);
   res = response(); await orders(req("PATCH", { id: "private-order", status: "delete" }), res); assert.equal(res.code, 401);
   res = response(); await orders(req("PATCH", { id: "private-order", status: "delete" }, newCookie().split(";")[0]), res); assert.equal(res.code, 200);
+});
+
+
+test("expanded legacy delivery is available for orders and alert rejection does not reject a saved order", async () => {
+  const prior = values.deliveryLocations;
+  const keys = ["RESEND_API_KEY", "ORDER_EMAIL_FROM", "ORDER_EMAIL_TO", "TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_FROM_NUMBER", "ORDER_SMS_TO"];
+  const env = Object.fromEntries(keys.map(k => [k, process.env[k]]));
+  try {
+    values.deliveryLocations = [{ id: "cb-kalulushi", name: "Kalulushi & Chambishi", fee: 35, province: "Copperbelt" }];
+    keys.forEach(k => { process.env[k] = `test-${k}`; });
+    let res = response(); await load(req("GET"), res);
+    assert.deepEqual(res.body.deliveryLocations.map((v: any) => [v.name, v.fee]), [["Kalulushi", 35], ["Chambishi", 35]]);
+    const order = { customerName: "Test", phone: "123", deliveryLocationId: "cb-kalulushi--chambishi", deliveryFee: 35, items: [{ id: "one", color: "Black", qty: 1, price: 25 }] };
+    res = response(); await orders(req("POST", order), res); assert.equal(res.code, 201);
+    res = response(); await orders(req("POST", { ...order, deliveryFee: 20 }), res); assert.equal(res.code, 409);
+  } finally {
+    values.deliveryLocations = prior;
+    keys.forEach(k => { if (env[k] === undefined) delete process.env[k]; else process.env[k] = env[k]; });
+  }
 });

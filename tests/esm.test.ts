@@ -10,7 +10,7 @@ test("compiled Vercel handlers load under native Node ESM", () => {
   const root = process.cwd();
   const dir = mkdtempSync(path.join(root, ".api-smoke-"));
   try {
-    for (const file of ["api/_lib/security.ts", "api/owner-session.ts", "api/load-data.ts", "api/save-data.ts", "api/orders.ts", "src/data.ts"]) {
+    for (const file of ["api/_lib/security.ts", "api/_lib/notifications.ts", "api/owner-session.ts", "api/load-data.ts", "api/save-data.ts", "api/orders.ts", "src/data.ts"]) {
       const dest = path.join(dir, file.replace(/\.ts$/, ".js"));
       mkdirSync(path.dirname(dest), { recursive: true });
       const compiled = ts.transpileModule(readFileSync(path.join(root, file), "utf8"), { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2020 } });

@@ -91,6 +91,7 @@ export type CustomerOrder = {
   deliveryLocationName: string;
   deliveryLocationId?: string;
   deliveryFee: number;
+  notifications?: { email: "pending" | "accepted" | "failed" | "unknown" | "unconfigured"; sms: "pending" | "accepted" | "failed" | "unknown" | "unconfigured" };
 };
 
 export type DeliveryLocation = {
@@ -100,7 +101,7 @@ export type DeliveryLocation = {
   province: string;
 };
 
-export const defaultDeliveryLocations: DeliveryLocation[] = [
+const originalDeliveryLocations: DeliveryLocation[] = [
   { id: "pickup-cbu", name: "Pickup: Copperbelt University (CBU)", fee: 0, province: "Pickup" },
   { id: "pickup-kitwe", name: "Pickup: Kitwe Town", fee: 0, province: "Pickup" },
   { id: "cb-town", name: "Ndola, Kitwe, Mufulira, Luanshya, Chingola, Chililabombwe", fee: 30, province: "Copperbelt" },
@@ -124,6 +125,33 @@ export const defaultDeliveryLocations: DeliveryLocation[] = [
   { id: "et-nyimba", name: "Nyimba, Petauke, Katete, Sinda & Chipata", fee: 50, province: "Eastern" },
   { id: "et-lumezi", name: "Lumezi & Lundazi", fee: 150, province: "Eastern" },
 ];
+
+/** Expand only known legacy groups. Preserve customised fees and unrelated custom locations. */
+const legacyDeliveryGroups: Record<string, { original: string; locations: string[] }> = {
+  "cb-town": { original: "Ndola, Kitwe, Mufulira, Luanshya, Chingola, Chililabombwe", locations: ["Ndola", "Kitwe", "Mufulira", "Luanshya", "Chingola", "Chililabombwe"] },
+  "cb-kalulushi": { original: "Kalulushi & Chambishi", locations: ["Kalulushi", "Chambishi"] },
+  "cb-mpongwe": { original: "Mpongwe & Ibenga", locations: ["Mpongwe", "Ibenga"] },
+  "ct-kabwe": { original: "Kabwe & Kapiri", locations: ["Kabwe", "Kapiri"] },
+  "ct-serenje": { original: "Serenje, Mukando & Mkushi", locations: ["Serenje", "Mukando", "Mkushi"] },
+  "nm-kasama": { original: "Kasama & Mpika", locations: ["Kasama", "Mpika"] },
+  "nm-mununga": { original: "Mununga Quarry, Chilonga, Senga Hill, Isoka, Chinsali, Nakonde, Lavushimanda", locations: ["Mununga Quarry", "Chilonga", "Senga Hill", "Isoka", "Chinsali", "Nakonde", "Lavushimanda"] },
+  "nm-mpulungu": { original: "Mpulungu, Luwingu & Mbala", locations: ["Mpulungu", "Luwingu", "Mbala"] },
+  "ws-iumwana": { original: "Iumwana R1, Manyama, Kisasa & Kalumbila", locations: ["Iumwana R1", "Manyama", "Kisasa", "Kalumbila"] },
+  "ws-mongu": { original: "Mongu, Kaoma, Tbz & Kalabo, Muumbwa", locations: ["Mongu", "Kaoma", "Tbz", "Kalabo", "Muumbwa"] },
+  "st-sesheke": { original: "Sesheke, Senanga, Katima Mulilo & Mwandi", locations: ["Sesheke", "Senanga", "Katima Mulilo", "Mwandi"] },
+  "st-kafue": { original: "Kafue, Mazabuka, Zimba, Monze, Choma, Pemba, Kalomo, Livingstone", locations: ["Kafue", "Mazabuka", "Zimba", "Monze", "Choma", "Pemba", "Kalomo", "Livingstone"] },
+  "lp-mansa": { original: "Mansa & Samfya", locations: ["Mansa", "Samfya"] },
+  "et-nyimba": { original: "Nyimba, Petauke, Katete, Sinda & Chipata", locations: ["Nyimba", "Petauke", "Katete", "Sinda", "Chipata"] },
+  "et-lumezi": { original: "Lumezi & Lundazi", locations: ["Lumezi", "Lundazi"] },
+};
+export function expandDeliveryLocations(locations: DeliveryLocation[]): DeliveryLocation[] {
+  return locations.flatMap(location => {
+    const group = legacyDeliveryGroups[location.id];
+    if (!group || group.original !== location.name) return [location];
+    return group.locations.map(name => ({ ...location, id: `${location.id}--${name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`, name }));
+  });
+}
+export const defaultDeliveryLocations: DeliveryLocation[] = expandDeliveryLocations(originalDeliveryLocations);
 
 function v(color: string, stock: number, image = ""): ColorVariant {
   return { color, stock, image };

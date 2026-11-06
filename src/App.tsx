@@ -20,6 +20,7 @@ export default function App() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [notificationsConfigured, setNotificationsConfigured] = useState({ email: false, sms: false });
   const [products, setProducts] = useState<Product[]>(defaultProducts);
   const [iPhones, setIPhones] = useState<IPhoneModel[]>(defaultIPhones);
   const [settings, setSettings] = useState<BusinessSettings>(defaultSettings);
@@ -33,6 +34,8 @@ export default function App() {
     setIPhones(Array.isArray(data.iphones) ? data.iphones as IPhoneModel[] : defaultIPhones);
     setSettings(data.settings && typeof data.settings === "object" ? { ...defaultSettings, ...data.settings as BusinessSettings } : defaultSettings);
     setDeliveryLocations(Array.isArray(data.deliveryLocations) ? data.deliveryLocations as DeliveryLocation[] : defaultDeliveryLocations);
+    const config = privateData ? data.notificationsConfigured as { email?: boolean; sms?: boolean } | undefined : undefined;
+    setNotificationsConfigured({ email: config?.email === true, sms: config?.sms === true });
     setSales(privateData && Array.isArray(data.sales) ? data.sales as Sale[] : defaultSales);
     setOrders(privateData && Array.isArray(data.orders) ? data.orders as CustomerOrder[] : defaultOrders);
   }
@@ -83,6 +86,6 @@ export default function App() {
     {!loading && !shared && <div className="fixed top-0 inset-x-0 z-[100] bg-amber-500 text-white text-xs font-semibold text-center py-2 px-4">Shared storage unavailable. Orders cannot be submitted until the store is configured.</div>}
     {view === "store" && <StoreFront products={products} iPhones={iPhones} settings={settings} deliveryLocations={deliveryLocations} onCreateOrder={async order => { if (!shared) throw new Error("Shared storage is unavailable. Please contact the store directly."); await createOrder(order); }} onSwitchToOwner={() => { setError(""); setView("login"); }} />}
     {view === "login" && <main className="min-h-screen bg-[#fafafa] flex items-center justify-center p-6"><form onSubmit={signIn} className="w-full max-w-md rounded-3xl bg-white p-8 shadow-xl"><p className="text-xs tracking-widest uppercase text-gray-400 font-bold">Eliah & Co.</p><h1 className="mt-3 text-2xl font-black">Owner sign in</h1><p className="mt-2 text-sm text-gray-500">Enter the owner password to access the dashboard.</p><label className="block mt-6 text-sm font-semibold">Password<input type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} required className="mt-2 w-full rounded-xl border border-gray-300 px-4 py-3" /></label>{error && <p role="alert" className="mt-3 text-sm text-red-700">{error}</p>}<button disabled={busy} className="mt-5 w-full rounded-full bg-[#1d1d1f] text-white font-semibold py-3">{busy ? "Signing in…" : "Sign in"}</button><button type="button" onClick={() => { setPassword(""); setError(""); setView("store"); }} className="mt-4 w-full text-sm text-gray-500">Back to store</button></form></main>}
-    {owner && <>{error && <div role="alert" className="sticky top-0 z-[100] bg-red-700 text-white text-sm text-center p-3">{error} <button onClick={() => setError("")} className="underline">Dismiss</button></div>}<OwnerDashboard products={products} setProducts={setProducts} iPhones={iPhones} setIPhones={setIPhones} settings={settings} setSettings={setSettings} sales={sales} setSales={setSales} orders={orders} setOrders={updateOrders} deliveryLocations={deliveryLocations} setDeliveryLocations={setDeliveryLocations} onResetData={resetAllData} onSwitchToStore={signOut} /></>}
+    {owner && <>{(!notificationsConfigured.email || !notificationsConfigured.sms) && <div role="status" className="bg-amber-100 text-amber-900 text-sm text-center p-3">Order alerts need setup: {!notificationsConfigured.email && "email"}{!notificationsConfigured.email && !notificationsConfigured.sms && " and "}{!notificationsConfigured.sms && "SMS"}. Orders are saved, but these alerts will not be sent until configured.</div>}{error && <div role="alert" className="sticky top-0 z-[100] bg-red-700 text-white text-sm text-center p-3">{error} <button onClick={() => setError("")} className="underline">Dismiss</button></div>}<OwnerDashboard products={products} setProducts={setProducts} iPhones={iPhones} setIPhones={setIPhones} settings={settings} setSettings={setSettings} sales={sales} setSales={setSales} orders={orders} setOrders={updateOrders} deliveryLocations={deliveryLocations} setDeliveryLocations={setDeliveryLocations} onResetData={resetAllData} onSwitchToStore={signOut} /></>}
   </>;
 }
