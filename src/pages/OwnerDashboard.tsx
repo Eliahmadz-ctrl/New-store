@@ -16,6 +16,7 @@ import React from "react";
 import GalleryEditor from "../components/GalleryEditor";
 import { cleanGallery, validGallery, galleryWithExamples } from "../lib/media";
 import { starterProductDetails, starterPhoneDetails } from "../lib/productDetails";
+import { uploadPhoto } from "../lib/photoUpload";
 
 type OwnerTab = "overview" | "products" | "inventory" | "phones" | "orders" | "sales" | "roi" | "settings";
 type ProductDraft = Omit<Product, "id"> & { id?: string };
@@ -63,19 +64,14 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 const inputClass = "w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm font-medium outline-none transition focus:border-[#b08d57] focus:ring-4 focus:ring-[#b08d57]/10";
 
-function imageToDataUrl(file: File): Promise<string> {
-  return new Promise((resolve) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.readAsDataURL(file);
-  });
-}
-
 export default function OwnerDashboard({
   products, setProducts, iPhones, setIPhones, settings, setSettings,
   sales, setSales, orders, setOrders, deliveryLocations, setDeliveryLocations, 
   onResetData, onSwitchToStore,
 }: Props) {
+  const [imageUploads, setImageUploads] = useState(0);
+  const [imageError, setImageError] = useState("");
+  const changeImageUploads = (delta: number) => setImageUploads(count => Math.max(0, count + delta));
   const [tab, setTab] = useState<OwnerTab>("overview");
   const [productSearch, setProductSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState("All");
@@ -114,7 +110,7 @@ export default function OwnerDashboard({
 
   function saveProduct(e: FormEvent) {
     e.preventDefault();
-    if (!productDraft?.name.trim()) return;
+    if (imageUploads || !productDraft?.name.trim()) return;
     if (!validGallery(productDraft.gallery)) { alert("Use a valid image or direct video URL in the gallery."); return; }
     const cleaned: Product = {
       id: productDraft.id ?? safeId("product"), name: productDraft.name.trim(),
@@ -142,7 +138,7 @@ export default function OwnerDashboard({
   }
 
   function saveIPhone(e: FormEvent) {
-    e.preventDefault(); if (!iPhoneDraft?.name.trim()) return;
+    e.preventDefault(); if (imageUploads || !iPhoneDraft?.name.trim()) return;
     if (!validGallery(iPhoneDraft.gallery)) { alert("Use a valid image or direct video URL in the gallery."); return; }
     const cleaned: IPhoneModel = { image: iPhoneDraft.image?.trim() || undefined, description: iPhoneDraft.description?.trim() || undefined, details: iPhoneDraft.details?.trim() ?? "", gallery: cleanGallery(iPhoneDraft.gallery), galleryCustomized: true, id: iPhoneDraft.id ?? safeId("iphone"), name: iPhoneDraft.name.trim(), condition: iPhoneDraft.condition, yuanPrice: Number(iPhoneDraft.yuanPrice) || 0, zmwPrice: Number(iPhoneDraft.zmwPrice) || 0, shipping: Number(iPhoneDraft.shipping) || 0, total: (Number(iPhoneDraft.zmwPrice) || 0) + (Number(iPhoneDraft.shipping) || 0) };
     setIPhones((c) => c.some((i) => i.id === cleaned.id) ? c.map((i) => i.id === cleaned.id ? cleaned : i) : [cleaned, ...c]);
@@ -168,15 +164,24 @@ export default function OwnerDashboard({
     setProductDraft({ ...productDraft, variants });
   }
 
-  async function handleVariantImageUpload(index: number, file: File) {
-    const dataUrl = await imageToDataUrl(file);
-    updateDraftVariant(index, "image", dataUrl);
+  async function uploadOwnerPhoto(file: File, apply: (url: string) => void) {
+    setImageError("");
+    changeImageUploads(1);
+    try { apply(await uploadPhoto(file)); }
+    catch (err) { setImageError(err instanceof Error ? err.message : "Could not upload the photo."); }
+    finally { changeImageUploads(-1); }
   }
 
-  async function handleProductImageUpload(file: File) {
-    if (!productDraft) return;
-    const dataUrl = await imageToDataUrl(file);
-    setProductDraft({ ...productDraft, image: dataUrl });
+  function handleVariantImageUpload(index: number, file: File) {
+    void uploadOwnerPhoto(file, url => setProductDraft(current => current ? { ...current, variants: current.variants.map((v, i) => i === index ? { ...v, image: url } : v) } : current));
+  }
+
+  function handleProductImageUpload(file: File) {
+    void uploadOwnerPhoto(file, url => setProductDraft(current => current ? { ...current, image: url } : current));
+  }
+
+  function handlePhoneImageUpload(file: File) {
+    void uploadOwnerPhoto(file, url => setIPhoneDraft(current => current ? { ...current, image: url } : current));
   }
 
   function addDraftVariant() {
@@ -417,7 +422,10 @@ export default function OwnerDashboard({
       {productDraft && (
         <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/40 p-0 backdrop-blur-sm sm:items-center sm:p-6">
           <form onSubmit={saveProduct} className="max-h-[92vh] w-full max-w-4xl overflow-y-auto rounded-t-3xl bg-white p-6 shadow-2xl sm:rounded-3xl">
-            <div className="mb-5 flex items-center justify-between"><h2 className="text-2xl font-black">{productDraft.id ? "Edit Product" : "New Product"}</h2><button type="button" onClick={() => setProductDraft(null)} className="rounded-full bg-gray-100 px-4 py-2 text-sm font-bold">Close</button></div>
+            {imageUploads > 0 && <p role="status" className="mb-4 rounded-2xl bg-amber-50 p-3 text-sm font-semibold text-amber-800">Preparing and uploading your photo… Please wait before saving.</p>}
+            {imageError && <p role="alert" className="mb-4 rounded-2xl bg-red-50 p-3 text-sm text-red-700">{imageError}</p>}
+            <fieldset disabled={imageUploads > 0}>
+            <div className="mb-5 flex items-center justify-between"><h2 className="text-2xl font-black">{productDraft.id ? "Edit Product" : "New Product"}</h2><button type="button" onClick={() => { setImageError(""); setProductDraft(null); }} className="rounded-full bg-gray-100 px-4 py-2 text-sm font-bold">Close</button></div>
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Name"><input required value={productDraft.name} onChange={(e) => setProductDraft({ ...productDraft, name: e.target.value })} className={inputClass} /></Field>
               <Field label="Category"><input value={productDraft.category} onChange={(e) => setProductDraft({ ...productDraft, category: e.target.value })} className={inputClass} /></Field>
@@ -427,14 +435,15 @@ export default function OwnerDashboard({
               <Field label="Badge"><input value={productDraft.badge ?? ""} onChange={(e) => setProductDraft({ ...productDraft, badge: e.target.value })} className={inputClass} /></Field>
               <Field label="Main image URL (or upload)">
                 <input value={productDraft.image} onChange={(e) => setProductDraft({ ...productDraft, image: e.target.value })} className={inputClass} placeholder="Paste URL or upload below" />
-                <input type="file" accept="image/*" onChange={(e) => { if (e.target.files?.[0]) handleProductImageUpload(e.target.files[0]); }} className="mt-2 text-sm" />
+                <p className="mt-2 text-xs text-gray-500">Photos up to 20 MB are resized automatically.</p>
+                <input aria-label="Upload main product photo" type="file" accept="image/*" onChange={(e) => { if (e.target.files?.[0]) handleProductImageUpload(e.target.files[0]); e.target.value = ""; }} className="mt-2 text-sm" />
                 {productDraft.image && <img src={productDraft.image} alt="" className="mt-2 h-20 w-20 rounded-xl object-cover" />}
               </Field>
               <div className="sm:col-span-2"><Field label="Description"><textarea value={productDraft.description} onChange={(e) => setProductDraft({ ...productDraft, description: e.target.value })} className={`${inputClass} min-h-20`} /></Field></div>
               <div className="sm:col-span-2"><Field label="More product information (optional)"><textarea value={productDraft.details ?? ""} onChange={(e) => setProductDraft({ ...productDraft, details: e.target.value })} className={`${inputClass} min-h-24`} placeholder="Materials, features, sizing or care instructions" /></Field></div>
             </div>
 
-            <GalleryEditor gallery={productDraft.gallery} update={fn => setProductDraft(current => current ? { ...current, gallery: fn(current.gallery || []) } : current)} />
+            <GalleryEditor onPendingChange={changeImageUploads} gallery={productDraft.gallery} update={fn => setProductDraft(current => current ? { ...current, gallery: fn(current.gallery || []) } : current)} />
 
             {/* VARIANT EDITOR */}
             <div className="mt-6 border-t border-gray-100 pt-6">
@@ -447,7 +456,7 @@ export default function OwnerDashboard({
                       <Field label="Stock"><input type="number" min="0" value={variant.stock} onChange={(e) => updateDraftVariant(index, "stock", Number(e.target.value))} className={inputClass} /></Field>
                       <Field label="Image URL (or upload)">
                         <input value={variant.image} onChange={(e) => updateDraftVariant(index, "image", e.target.value)} className={inputClass} placeholder="URL or upload" />
-                        <input type="file" accept="image/*" onChange={(e) => { if (e.target.files?.[0]) handleVariantImageUpload(index, e.target.files[0]); }} className="mt-2 text-sm" />
+                        <input aria-label={`Upload photo for colour ${index + 1}`} type="file" accept="image/*" onChange={(e) => { if (e.target.files?.[0]) handleVariantImageUpload(index, e.target.files[0]); e.target.value = ""; }} className="mt-2 text-sm" />
                       </Field>
                       <div className="flex items-end"><button type="button" onClick={() => removeDraftVariant(index)} className="rounded-full bg-red-50 px-4 py-3 text-xs font-bold text-red-600">Remove</button></div>
                     </div>
@@ -457,6 +466,7 @@ export default function OwnerDashboard({
               </div>
             </div>
             <button type="submit" className="mt-6 w-full rounded-full bg-[#1d1d1f] py-4 text-sm font-black text-white">Save Product</button>
+            </fieldset>
           </form>
         </div>
       )}
@@ -465,7 +475,10 @@ export default function OwnerDashboard({
       {iPhoneDraft && (
         <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/40 p-0 backdrop-blur-sm sm:items-center sm:p-6">
           <form onSubmit={saveIPhone} className="w-full max-w-xl max-h-[90vh] overflow-y-auto rounded-t-3xl bg-white p-6 shadow-2xl sm:rounded-3xl">
-            <div className="mb-5 flex items-center justify-between"><h2 className="text-2xl font-black">{iPhoneDraft.id ? "Edit Phone" : "New Phone"}</h2><button type="button" onClick={() => setIPhoneDraft(null)} className="rounded-full bg-gray-100 px-4 py-2 text-sm font-bold">Close</button></div>
+            {imageUploads > 0 && <p role="status" className="mb-4 rounded-2xl bg-amber-50 p-3 text-sm font-semibold text-amber-800">Preparing and uploading your photo… Please wait before saving.</p>}
+            {imageError && <p role="alert" className="mb-4 rounded-2xl bg-red-50 p-3 text-sm text-red-700">{imageError}</p>}
+            <fieldset disabled={imageUploads > 0}>
+            <div className="mb-5 flex items-center justify-between"><h2 className="text-2xl font-black">{iPhoneDraft.id ? "Edit Phone" : "New Phone"}</h2><button type="button" onClick={() => { setImageError(""); setIPhoneDraft(null); }} className="rounded-full bg-gray-100 px-4 py-2 text-sm font-bold">Close</button></div>
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Model"><input required value={iPhoneDraft.name} onChange={(e) => setIPhoneDraft({ ...iPhoneDraft, name: e.target.value })} className={inputClass} /></Field>
               <Field label="Condition"><select value={iPhoneDraft.condition} onChange={(e) => setIPhoneDraft({ ...iPhoneDraft, condition: e.target.value as "99%" | "NEW" })} className={inputClass}><option>99%</option><option>NEW</option></select></Field>
@@ -475,12 +488,13 @@ export default function OwnerDashboard({
               <div className="rounded-2xl bg-gray-50 p-4"><p className="text-xs font-bold uppercase text-gray-400">Auto total</p><p className="mt-2 text-2xl font-black text-[#b08d57]">{money((Number(iPhoneDraft.zmwPrice) || 0) + (Number(iPhoneDraft.shipping) || 0))}</p></div>
             </div>
             <div className="mt-5 space-y-4">
-              <Field label="Main image URL"><input value={iPhoneDraft.image ?? ""} onChange={e => setIPhoneDraft({ ...iPhoneDraft, image: e.target.value })} className={inputClass} placeholder="https://..." /></Field>
+              <Field label="Main image URL (or upload)"><input value={iPhoneDraft.image ?? ""} onChange={e => setIPhoneDraft({ ...iPhoneDraft, image: e.target.value })} className={inputClass} placeholder="https://..." /><p className="mt-2 text-xs text-gray-500">Photos up to 20 MB are resized automatically.</p><input aria-label="Upload main phone photo" type="file" accept="image/*" onChange={e => { if (e.target.files?.[0]) handlePhoneImageUpload(e.target.files[0]); e.target.value = ""; }} className="mt-2 text-sm" /></Field>
               <Field label="Description"><textarea value={iPhoneDraft.description ?? ""} onChange={e => setIPhoneDraft({ ...iPhoneDraft, description: e.target.value })} className={inputClass} placeholder="Optional description" /></Field>
               <Field label="More product information"><textarea value={iPhoneDraft.details ?? ""} onChange={e => setIPhoneDraft({ ...iPhoneDraft, details: e.target.value })} className={inputClass} placeholder="Features, condition or specifications" /></Field>
             </div>
-            <GalleryEditor gallery={iPhoneDraft.gallery} update={fn => setIPhoneDraft(current => current ? { ...current, gallery: fn(current.gallery || []) } : current)} />
+            <GalleryEditor onPendingChange={changeImageUploads} gallery={iPhoneDraft.gallery} update={fn => setIPhoneDraft(current => current ? { ...current, gallery: fn(current.gallery || []) } : current)} />
             <button type="submit" className="mt-6 w-full rounded-full bg-[#1d1d1f] py-4 text-sm font-black text-white">Save Phone</button>
+            </fieldset>
           </form>
         </div>
       )}

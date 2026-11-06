@@ -1,24 +1,25 @@
 import { useState } from "react";
 import type { MediaItem } from "../data";
+import { uploadPhoto } from "../lib/photoUpload";
 
-type Props = { gallery?: MediaItem[]; update: (fn: (items: MediaItem[]) => MediaItem[]) => void };
+type Props = { gallery?: MediaItem[]; update: (fn: (items: MediaItem[]) => MediaItem[]) => void; onPendingChange: (delta: number) => void };
 const input = "w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm font-medium outline-none focus:border-[#b08d57]";
-const MAX_IMAGE_BYTES = 250 * 1024;
 
-export default function GalleryEditor({ gallery = [], update }: Props) {
+export default function GalleryEditor({ gallery = [], update, onPendingChange }: Props) {
   const [error, setError] = useState("");
-  function upload(file: File, index: number) {
+  async function upload(file: File, index: number) {
     setError("");
-    if (!file.type.startsWith("image/") || file.size > MAX_IMAGE_BYTES) { setError("Choose an image up to 250 KB, or paste an image URL. Videos must use a direct video URL."); return; }
     const original = gallery[index];
-    const reader = new FileReader();
-    reader.onerror = () => setError("Could not read that image. Please try again.");
-    reader.onload = () => update(items => items.map(item => item === original && item.type === "image" ? { ...item, url: String(reader.result), example: false } : item));
-    reader.readAsDataURL(file);
+    onPendingChange(1);
+    try {
+      const url = await uploadPhoto(file);
+      update(items => items.map(item => item === original && item.type === "image" ? { ...item, url, example: false } : item));
+    } catch (err) { setError(err instanceof Error ? err.message : "Could not upload the photo."); }
+    finally { onPendingChange(-1); }
   }
   return <div className="mt-6 border-t border-gray-100 pt-6">
     <div className="flex items-center justify-between gap-3"><h3 className="text-lg font-black">More photos &amp; videos</h3><button type="button" onClick={() => update(items => [...items, { type: "image", url: "" }])} className="rounded-full bg-[#1d1d1f] px-4 py-2 text-xs font-bold text-white">Add media</button></div>
-    <p className="mt-2 text-sm text-gray-500">Paste an image or direct video file URL (such as MP4). Small images up to 250 KB can also be uploaded. Videos need to be hosted elsewhere.</p>
+    <p className="mt-2 text-sm text-gray-500">Paste an image or direct video file URL (such as MP4). Photos up to 20 MB can be uploaded; they are automatically resized for the store. Videos need to be hosted elsewhere.</p>
     {error && <p role="alert" className="mt-3 text-sm text-red-700">{error}</p>}
     <div className="mt-4 grid gap-4 sm:grid-cols-2">{gallery.map((item, index) => <div key={index} className="rounded-2xl border border-gray-100 bg-gray-50 p-4">
       <div className="mb-3 flex gap-2"><select aria-label={`Media ${index + 1} type`} value={item.type} onChange={e => update(items => items.map((m, i) => i === index ? { type: e.target.value as "image" | "video", url: "" } : m))} className={input}><option value="image">Image</option><option value="video">Video</option></select><button type="button" aria-label={`Remove media ${index + 1}`} onClick={() => update(items => items.filter((_, i) => i !== index))} className="rounded-2xl bg-red-50 px-4 text-xs font-bold text-red-600">Remove</button></div>

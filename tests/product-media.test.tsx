@@ -102,3 +102,48 @@ test("owner can save product and phone galleries and shoppers can open them", as
     assert.equal(starter.queryByRole("main"), null);
   } finally { cleanup(); dom.window.close(); }
 });
+
+test("owner can upload a large gallery photo and cannot save before upload completes", async () => {
+  const dom = new JSDOM("<!doctype html><html><body></body></html>", { url: "https://shop.example" });
+  const original = { fetch: globalThis.fetch, Image: globalThis.Image, create: URL.createObjectURL, revoke: URL.revokeObjectURL };
+  Object.assign(globalThis, { window: dom.window, document: dom.window.document, HTMLElement: dom.window.HTMLElement, File: dom.window.File, FileReader: dom.window.FileReader });
+  Object.defineProperty(globalThis, "navigator", { value: dom.window.navigator, configurable: true });
+  class FakeImage {
+    naturalWidth = 4000; naturalHeight = 3000;
+    onload: (() => void) | null = null;
+    set src(_value: string) { queueMicrotask(() => this.onload?.()); }
+  }
+  Object.assign(globalThis, { Image: FakeImage });
+  URL.createObjectURL = () => "blob:photo"; URL.revokeObjectURL = () => {};
+  dom.window.HTMLCanvasElement.prototype.getContext = (() => ({ drawImage: () => {} })) as any;
+  dom.window.HTMLCanvasElement.prototype.toDataURL = () => "data:image/jpeg;base64,/9j/4AA=";
+  let resolveRequest: ((response: Response) => void) | undefined;
+  globalThis.fetch = (() => new Promise<Response>(resolve => { resolveRequest = resolve; })) as typeof fetch;
+  const { render, fireEvent, cleanup, waitFor } = await import("@testing-library/react");
+  const { default: OwnerDashboard } = await import("../src/pages/OwnerDashboard");
+  let saved: Product | undefined;
+  function App() {
+    const [products, setProducts] = useState([defaults[0]]);
+    saved = products[0];
+    return <OwnerDashboard products={products} setProducts={setProducts} iPhones={[]} setIPhones={() => {}} settings={settings} setSettings={() => {}} sales={[]} setSales={() => {}} orders={[]} setOrders={() => {}} deliveryLocations={defaultDeliveryLocations} setDeliveryLocations={() => {}} onResetData={() => {}} onSwitchToStore={() => {}} />;
+  }
+  try {
+    const ui = render(<App />);
+    fireEvent.click(ui.getByRole("button", { name: "Products" }));
+    fireEvent.click(ui.getByRole("button", { name: "Edit" }));
+    const file = new dom.window.File([new Uint8Array(2 * 1024 * 1024)], "large.jpg", { type: "image/jpeg" });
+    fireEvent.change(ui.getByLabelText("Upload image 1"), { target: { files: [file] } });
+    assert.ok(ui.getByRole("status"));
+    assert.ok(ui.getByRole("button", { name: "Save Product" }).matches(":disabled"));
+    await waitFor(() => assert.ok(resolveRequest));
+    const url = `/api/images?id=${"b".repeat(64)}`;
+    resolveRequest!(new Response(JSON.stringify({ url }), { status: 200 }));
+    await waitFor(() => assert.equal((ui.getByLabelText("Image URL") as HTMLInputElement).value, url));
+    assert.equal(ui.queryByRole("status"), null);
+    fireEvent.click(ui.getByRole("button", { name: "Save Product" }));
+    assert.deepEqual(saved?.gallery, [{ type: "image", url }]);
+  } finally {
+    cleanup(); Object.assign(globalThis, { fetch: original.fetch, Image: original.Image });
+    URL.createObjectURL = original.create; URL.revokeObjectURL = original.revoke; dom.window.close();
+  }
+});

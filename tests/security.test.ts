@@ -5,6 +5,7 @@ import save from "../api/save-data";
 import load from "../api/load-data";
 import session from "../api/owner-session";
 import orders from "../api/orders";
+import images from "../api/images";
 
 process.env.KV_REST_API_URL = "https://example.invalid";
 process.env.KV_REST_API_TOKEN = "test-token";
@@ -27,7 +28,7 @@ globalThis.fetch = (async (_url: any, init?: RequestInit) => {
       case "get": return { result: values[key] === undefined ? null : JSON.stringify(values[key]) };
       case "incr": hits[key] = (hits[key] || 0) + 1; return { result: hits[key] };
       case "expire": return { result: 1 };
-      case "set": values[key] = JSON.parse(value); return { result: "OK" };
+      case "set": try { values[key] = JSON.parse(value); } catch { values[key] = value; } return { result: "OK" };
       case "eval": {
         if (String(key).includes("INCR")) { const rateKey = cmd[3]; hits[rateKey] = (hits[rateKey] || 0) + 1; return { result: hits[rateKey] }; }
         return { result: 1 };
@@ -45,6 +46,7 @@ function response() {
   r.status = (code: number) => { r.code = code; return r; };
   r.setHeader = (key: string, value: string) => { r.headers[key] = value; return r; };
   r.json = (value: unknown) => { r.body = value; return r; };
+  r.send = (value: unknown) => { r.body = value; return r; };
   return r;
 }
 
@@ -101,4 +103,24 @@ test("expanded legacy delivery is available for orders and alert rejection does 
     values.deliveryLocations = prior;
     keys.forEach(k => { if (env[k] === undefined) delete process.env[k]; else process.env[k] = env[k]; });
   }
+});
+
+
+test("large-photo storage accepts only owner uploads and serves validated images independently", async () => {
+  const png = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3]);
+  const data = `data:image/png;base64,${png.toString("base64")}`;
+  const cookie = newCookie().split(";")[0];
+  let res = response(); await images(req("POST", { image: data }), res); assert.equal(res.code, 401);
+  res = response(); await images(req("POST", { image: data }, cookie, "https://evil.example"), res); assert.equal(res.code, 403);
+  res = response(); await images(req("POST", { image: "data:image/png;base64,aGVsbG8=" }, cookie), res); assert.equal(res.code, 400);
+  res = response(); await images(req("POST", { image: `data:image/png;base64,${Buffer.alloc(301 * 1024).toString("base64")}` }, cookie), res); assert.equal(res.code, 400);
+  res = response(); await images(req("POST", { image: data }, cookie), res); assert.equal(res.code, 200);
+  const id = res.body.url.split("=")[1];
+  assert.match(id, /^[a-f0-9]{64}$/);
+  const query = { ...req("GET"), query: { id } };
+  res = response(); await images(query, res); assert.equal(res.code, 200);
+  assert.equal(res.headers["Content-Type"], "image/png"); assert.deepEqual(res.body, png);
+  assert.match(res.headers["Cache-Control"], /immutable/);
+  res = response(); await images({ ...req("GET"), query: { id: "bad" } }, res); assert.equal(res.code, 400);
+  res = response(); await images({ ...req("GET"), query: { id: "0".repeat(64) } }, res); assert.equal(res.code, 404);
 });

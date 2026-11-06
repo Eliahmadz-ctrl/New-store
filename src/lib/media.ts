@@ -5,7 +5,7 @@ export function cleanGallery(gallery?: MediaItem[]): MediaItem[] {
 }
 export function validGallery(gallery?: MediaItem[]): boolean {
   return cleanGallery(gallery).every(item => {
-    if (item.type === "image" && Object.values(starterImages).includes(item.url)) return true;
+    if (item.type === "image" && (Object.values(starterImages).includes(item.url) || /^\/api\/images\?id=[a-f0-9]{64}$/.test(item.url))) return true;
     if (/^https?:\/\//i.test(item.url)) {
       try { const url = new URL(item.url); return !!url.hostname && !url.username && !url.password; } catch { return false; }
     }
