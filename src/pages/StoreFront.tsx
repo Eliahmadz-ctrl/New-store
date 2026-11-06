@@ -40,7 +40,7 @@ function phoneProductFromIPhone(phone: IPhoneModel): Product {
     unitPrice: phone.total,
     image: "https://images.pexels.com/photos/788946/pexels-photo-788946.jpeg?auto=compress&cs=tinysrgb&fit=crop&h=600&w=600",
     inStock: 10,
-    description: `${phone.name} in ${phone.condition} condition. Cost: ¥${phone.yuanPrice.toLocaleString()} | Landed total: K${phone.total.toLocaleString("en-ZM")}.`,
+    description: `${phone.name} in ${phone.condition} condition.`,
     badge: phone.condition,
     variants: [
       { color: "Black", stock: 3, image: "" },
@@ -63,7 +63,7 @@ export default function StoreFront({
   iPhones: IPhoneModel[];
   settings: BusinessSettings;
   deliveryLocations: DeliveryLocation[];
-  onCreateOrder: (order: CustomerOrder) => void;
+  onCreateOrder: (order: CustomerOrder) => Promise<void>;
   onSwitchToOwner: () => void;
 }) {
   const [activeCat, setActiveCat] = useState("All");
@@ -78,6 +78,8 @@ export default function StoreFront({
   const [customerEmail, setCustomerEmail] = useState("");
   const [orderNote, setOrderNote] = useState("");
   const [orderSuccess, setOrderSuccess] = useState("");
+  const [orderError, setOrderError] = useState("");
+  const [orderPending, setOrderPending] = useState(false);
   const [deliveryLocationId, setDeliveryLocationId] = useState("pickup-kitwe");
   const shopRef = useRef<HTMLElement>(null);
   const [ownerClicks, setOwnerClicks] = useState(0);
@@ -167,8 +169,10 @@ export default function StoreFront({
     setSelectedColor(getVariants(product)[0].color);
   }
 
-  function submitOrder() {
-    if (!cart.length || orderSuccess) return;
+  async function submitOrder() {
+    if (!cart.length || orderSuccess || orderPending) return;
+    if (!customerName.trim() || !customerPhone.trim()) { setOrderError("Please provide your name and phone number."); return; }
+    setOrderError(""); setOrderPending(true);
     const order: CustomerOrder = {
       id: safeId("order"),
       customerName: customerName.trim() || "Website customer",
@@ -180,6 +184,7 @@ export default function StoreFront({
       status: "New",
       total: grandTotal,
       deliveryLocationName: selectedDelivery.name,
+      deliveryLocationId: selectedDelivery.id,
       deliveryFee: deliveryFee,
       items: cart.map((item) => ({
         id: item.product.id,
@@ -189,8 +194,11 @@ export default function StoreFront({
         price: item.product.unitPrice,
       })),
     };
-    onCreateOrder(order);
-    setOrderSuccess("Order sent! Use WhatsApp, email or SMS below to notify the owner.");
+    try {
+      await onCreateOrder(order);
+      setOrderSuccess("Order sent! Use WhatsApp, email or SMS below to notify the owner.");
+    } catch (err) { setOrderError(err instanceof Error ? err.message : "Could not send order. Please try again."); }
+    finally { setOrderPending(false); }
   }
 
   function handleLogoClick() {
@@ -524,7 +532,8 @@ export default function StoreFront({
                           <div className="flex justify-between text-sm font-bold text-gray-500"><span>Delivery Fee</span><span>{deliveryFee === 0 ? "Free" : `K${deliveryFee}`}</span></div>
                           <div className="flex justify-between text-lg font-bold border-t border-gray-200 pt-2"><span>Grand Total</span><span>{K(grandTotal)}</span></div>
                         </div>
-                        <button onClick={submitOrder} className="block w-full rounded-full py-4 text-center font-semibold text-white transition-colors" style={{ backgroundColor: accent }}>Submit Order to Owner</button>
+                        {orderError && <p role="alert" className="text-sm text-red-700">{orderError}</p>}
+                        <button onClick={submitOrder} disabled={orderPending} className="block w-full rounded-full py-4 text-center font-semibold text-white transition-colors disabled:opacity-50" style={{ backgroundColor: accent }}>{orderPending ? "Submitting…" : "Submit Order to Owner"}</button>
                       </>
                     )}
                   </div>

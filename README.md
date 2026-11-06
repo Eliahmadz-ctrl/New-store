@@ -1,117 +1,31 @@
 # Eliah & Co.
 
-A responsive retail storefront + owner dashboard with shared, persistent state
-powered by **Vercel KV** (Upstash Redis). Deployable on **GitHub + Vercel**.
+A Vite/React storefront and owner dashboard using Upstash Redis through Vercel serverless functions.
 
-> **Security warning:** This supplied application does not authenticate the owner
-> dashboard or its API. The five-tap logo gesture is not access control: anyone
-> can access the dashboard, read customer orders and business data, and overwrite
-> shared data if Redis is connected. Do not use it for real customer information
-> or connect shared storage on a public deployment until proper authentication,
-> authorization, and protected order handling have been implemented.
+## Production setup
 
----
+1. Secure any existing Redis database first. If a token was shared, rotate/revoke it (or replace the database) and do not reuse it. Do not paste credentials in chat or commit them.
+2. Deploy this version of the app **before** connecting storage. Earlier versions expose shared data and writes without authentication.
+3. In the Vercel project **Settings → Environment Variables**, add the following for Production. Obtain the first two values securely from Upstash or connect an Upstash Redis integration. Use the plain REST URL, not Markdown or the `rediss://` URL.
+   - `KV_REST_API_URL` — Upstash REST URL.
+   - `KV_REST_API_TOKEN` — newly rotated Upstash REST token; mark sensitive.
+   - `OWNER_PASSWORD` — a unique, randomly generated password of at least 32 characters; mark sensitive.
+   - `OWNER_SESSION_SECRET` — a separate, randomly generated secret of at least 32 characters; mark sensitive.
+4. Redeploy the protected version so it receives the variables. Never expose the token or owner secrets as `VITE_` variables. Rotating `OWNER_SESSION_SECRET` invalidates existing sessions.
+5. Tap the storefront logo five times and sign in with the owner password. Verify on separate browsers that a customer can submit an order and only the signed-in owner can read or edit it.
 
-## 1 · Local development
+The dashboard uses an eight-hour Secure, HttpOnly, SameSite cookie and rate-limits sign-in attempts using Redis. Public reads exclude orders, sales and stored purchase costs. Owner writes require a session and same-origin requests. Customer orders are stored using an atomic Redis operation and checked against server-side prices, delivery options and stock. This is a single-owner password system, not multi-user identity management; protect the Vercel and Upstash accounts, keep secrets private, and review security before handling real customer data. Orders do not reserve or automatically decrement stock. Review orders before fulfilling them. Only one owner should edit the same data at a time (catalog/settings/sales use whole-document saves).
 
-```bash
-npm install
-npm run dev          # http://localhost:5173 — uses localStorage only
+## Development
+
+```sh
+npm ci
+npm run dev
+npm test
+npm run build
+npx tsc --noEmit
 ```
 
-To run the API routes locally (so the site talks to a real KV during dev), install
-the Vercel CLI and use `vercel dev`:
+Plain Vite does not run the serverless API. The storefront shows defaults, owner login is unavailable and orders cannot be submitted. For API development use `vercel dev` with a separate test Redis database and the variables above. Customer and sales data are not persisted to browser localStorage.
 
-```bash
-npm i -g vercel
-vercel dev           # runs Vite + the /api/* serverless functions
-```
-
-Without env vars, `vercel dev` and `npm run dev` both fall back to the browser's
-`localStorage`, and an amber banner appears at the top of the site.
-
----
-
-## 2 · Push to GitHub
-
-```bash
-git init
-git add .
-git commit -m "Initial commit — Eliah & Co."
-git branch -M main
-git remote add origin https://github.com/<your-username>/eliah-and-co.git
-git push -u origin main
-```
-
-Create the empty repository on GitHub first (don't tick "Add README"), then push.
-
----
-
-## 3 · Deploy on Vercel
-
-1. Go to [vercel.com/new](https://vercel.com/new) and sign in with GitHub.
-2. Click **Import** next to the `eliah-and-co` repository you just pushed.
-3. Vercel auto-detects the **Vite** framework preset — leave everything as-is.
-4. Click **Deploy**. First deploy takes ~30 s.
-
-You'll get a live URL like `https://eliah-and-co.vercel.app`. Every subsequent
-push to `main` triggers a new deploy automatically.
-
----
-
-## 4 · Enable shared persistence (Vercel KV)
-
-Without this step, each visitor's edits stay on their own device. With it, every
-edit from any owner session is visible to every visitor within ~1 second.
-
-1. In your Vercel project, go to **Storage → Create Database → Upstash (Redis)**
-   (or open the Vercel Marketplace → search *redis*).
-2. Click **Connect**. Vercel auto-injects these env vars into your project:
-   - `KV_REST_API_URL`
-   - `KV_REST_API_TOKEN`
-   - `KV_REST_API_READ_ONLY_TOKEN`
-   - `KV_URL`
-3. Go to **Deployments → Redeploy** (or just push any commit) so the functions
-   pick up the new env vars.
-4. Open the live site. The amber banner disappears, and the black
-   *"Loading shared data…"* banner shows briefly on every page load.
-
-From now on, edits made on any device are written to Redis via
-`/api/save-data` and read back by every visitor via `/api/load-data`.
-
----
-
-## 5 · Project structure
-
-```
-eliah-and-co/
-├─ api/
-│  ├─ load-data.ts        # GET /api/load-data  — reads all keys from KV
-│  └─ save-data.ts        # POST /api/save-data — writes one key to KV
-├─ src/
-│  ├─ App.tsx             # mounts store / dashboard, loads + saves to KV
-│  ├─ data.ts             # types + defaults (products, iPhones, settings…)
-│  ├─ lib/blobsClient.ts  # fetch wrapper + debounced save
-│  └─ pages/
-│     ├─ StoreFront.tsx       # customer storefront + cart + checkout
-│     └─ OwnerDashboard.tsx   # owner control center (edit everything)
-├─ index.html
-├─ vite.config.ts
-├─ package.json
-└─ README.md
-```
-
-The owner dashboard is hidden on the storefront — tap the **ELIAH&CO** logo
-**5 times** to enter.
-
----
-
-## 6 · Notes
-
-- The site uses `vite-plugin-singlefile`, so `npm run build` produces a single
-  `dist/index.html` with all JS/CSS inlined. Vercel still deploys `api/*` as
-  separate serverless functions alongside the static bundle.
-- API functions only respond to known keys (`products`, `iphones`, `settings`,
-  `sales`, `orders`, `deliveryLocations`) — arbitrary writes are rejected.
-- If KV isn't configured, `/api/load-data` returns `503` and the site keeps
-  working with `localStorage` so local development never breaks.
+The store defaults in `src/data.ts` are bundled into the public client; do not put private data in that file. Owner changes and customer orders require Redis. API tests use a mock Redis service; a full end-to-end test requires a configured test database.

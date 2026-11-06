@@ -89,6 +89,7 @@ export type CustomerOrder = {
   items: OrderItem[];
   total: number;
   deliveryLocationName: string;
+  deliveryLocationId?: string;
   deliveryFee: number;
 };
 
