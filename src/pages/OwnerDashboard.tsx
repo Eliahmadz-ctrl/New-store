@@ -14,7 +14,8 @@ import {
 
 import React from "react";
 import GalleryEditor from "../components/GalleryEditor";
-import { cleanGallery, validGallery } from "../lib/media";
+import { cleanGallery, validGallery, galleryWithExamples } from "../lib/media";
+import { starterProductDetails, starterPhoneDetails } from "../lib/productDetails";
 
 type OwnerTab = "overview" | "products" | "inventory" | "phones" | "orders" | "sales" | "roi" | "settings";
 type ProductDraft = Omit<Product, "id"> & { id?: string };
@@ -120,7 +121,7 @@ export default function OwnerDashboard({
       category: productDraft.category.trim() || "General", unitCost: Number(productDraft.unitCost) || 0,
       shipping: Number(productDraft.shipping) || 0, unitPrice: Number(productDraft.unitPrice) || 0,
       image: productDraft.image.trim(), inStock: totalStock(productDraft as Product),
-      description: productDraft.description.trim(), details: productDraft.details?.trim() || undefined, gallery: cleanGallery(productDraft.gallery), badge: productDraft.badge?.trim() || undefined,
+      description: productDraft.description.trim(), details: productDraft.details?.trim() ?? "", gallery: cleanGallery(productDraft.gallery), galleryCustomized: true, badge: productDraft.badge?.trim() || undefined,
       variants: (productDraft.variants || []).filter((v) => v.color.trim()).map((v) => ({ color: v.color.trim(), stock: Math.max(0, Math.round(Number(v.stock) || 0)), image: v.image })),
     };
     if (!cleaned.variants.length) cleaned.variants = [{ color: "Default", stock: cleaned.inStock || 0, image: "" }];
@@ -143,7 +144,7 @@ export default function OwnerDashboard({
   function saveIPhone(e: FormEvent) {
     e.preventDefault(); if (!iPhoneDraft?.name.trim()) return;
     if (!validGallery(iPhoneDraft.gallery)) { alert("Use a valid image or direct video URL in the gallery."); return; }
-    const cleaned: IPhoneModel = { image: iPhoneDraft.image?.trim() || undefined, description: iPhoneDraft.description?.trim() || undefined, details: iPhoneDraft.details?.trim() || undefined, gallery: cleanGallery(iPhoneDraft.gallery), id: iPhoneDraft.id ?? safeId("iphone"), name: iPhoneDraft.name.trim(), condition: iPhoneDraft.condition, yuanPrice: Number(iPhoneDraft.yuanPrice) || 0, zmwPrice: Number(iPhoneDraft.zmwPrice) || 0, shipping: Number(iPhoneDraft.shipping) || 0, total: (Number(iPhoneDraft.zmwPrice) || 0) + (Number(iPhoneDraft.shipping) || 0) };
+    const cleaned: IPhoneModel = { image: iPhoneDraft.image?.trim() || undefined, description: iPhoneDraft.description?.trim() || undefined, details: iPhoneDraft.details?.trim() ?? "", gallery: cleanGallery(iPhoneDraft.gallery), galleryCustomized: true, id: iPhoneDraft.id ?? safeId("iphone"), name: iPhoneDraft.name.trim(), condition: iPhoneDraft.condition, yuanPrice: Number(iPhoneDraft.yuanPrice) || 0, zmwPrice: Number(iPhoneDraft.zmwPrice) || 0, shipping: Number(iPhoneDraft.shipping) || 0, total: (Number(iPhoneDraft.zmwPrice) || 0) + (Number(iPhoneDraft.shipping) || 0) };
     setIPhones((c) => c.some((i) => i.id === cleaned.id) ? c.map((i) => i.id === cleaned.id ? cleaned : i) : [cleaned, ...c]);
     setIPhoneDraft(null); notify("Phone pricing saved");
   }
@@ -227,7 +228,7 @@ export default function OwnerDashboard({
                 <div key={p.id} className="flex items-center gap-4 rounded-2xl bg-gray-50 p-3"><img src={p.image} alt="" className="h-14 w-14 rounded-2xl object-cover" /><div className="min-w-0 flex-1"><p className="truncate font-bold">{p.name}</p><p className="text-xs text-gray-400">{p.category} | {totalStock(p)} units</p></div><div className="text-right"><p className="font-black text-green-600">{m.roi.toFixed(0)}%</p></div></div>
               ); })}</div>
             </div>
-            {lowStock.length > 0 && <div className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm"><h2 className="text-xl font-black mb-4">Low Stock</h2><div className="space-y-3">{lowStock.map((p) => <div key={p.id} className="flex items-center gap-3 rounded-2xl bg-red-50 p-3"><img src={p.image} alt="" className="h-12 w-12 rounded-xl object-cover" /><div className="flex-1"><p className="text-sm font-bold">{p.name}</p><p className="text-xs text-red-500 font-semibold">{totalStock(p)} left</p></div><button onClick={() => setProductDraft(p)} className="rounded-full bg-white px-3 py-2 text-xs font-bold">Edit</button></div>)}</div></div>}
+            {lowStock.length > 0 && <div className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm"><h2 className="text-xl font-black mb-4">Low Stock</h2><div className="space-y-3">{lowStock.map((p) => <div key={p.id} className="flex items-center gap-3 rounded-2xl bg-red-50 p-3"><img src={p.image} alt="" className="h-12 w-12 rounded-xl object-cover" /><div className="flex-1"><p className="text-sm font-bold">{p.name}</p><p className="text-xs text-red-500 font-semibold">{totalStock(p)} left</p></div><button onClick={() => setProductDraft({ ...p, details: p.details ?? starterProductDetails(p), gallery: galleryWithExamples(p.gallery, p.galleryCustomized, p.category) })} className="rounded-full bg-white px-3 py-2 text-xs font-bold">Edit</button></div>)}</div></div>}
           </section>
         )}
 
@@ -258,7 +259,7 @@ export default function OwnerDashboard({
                       <div className="rounded-2xl bg-gray-50 p-3"><p className="font-black text-green-600">{m.roi.toFixed(0)}%</p><p className="text-gray-400">ROI</p></div>
                     </div>
                     <div className="mt-5 grid grid-cols-3 gap-2">
-                      <button onClick={() => setProductDraft(p)} className="rounded-2xl bg-[#1d1d1f] px-3 py-3 text-xs font-bold text-white">Edit</button>
+                      <button onClick={() => setProductDraft({ ...p, details: p.details ?? starterProductDetails(p), gallery: galleryWithExamples(p.gallery, p.galleryCustomized, p.category) })} className="rounded-2xl bg-[#1d1d1f] px-3 py-3 text-xs font-bold text-white">Edit</button>
                       <button onClick={() => duplicateProduct(p)} className="rounded-2xl bg-gray-100 px-3 py-3 text-xs font-bold">Copy</button>
                       <button onClick={() => deleteProduct(p.id)} className="rounded-2xl bg-red-50 px-3 py-3 text-xs font-bold text-red-600">Delete</button>
                     </div>
@@ -278,7 +279,7 @@ export default function OwnerDashboard({
                 const vars = getVariants(p);
                 return (
                   <div key={p.id} className="rounded-3xl border border-gray-100 bg-white p-5 shadow-sm">
-                    <div className="flex items-center gap-4 mb-4"><img src={p.image} alt="" className="h-14 w-14 rounded-2xl object-cover" /><div className="flex-1"><h3 className="font-black">{p.name}</h3><p className="text-xs text-gray-400">{p.category} | Total: {totalStock(p)}</p></div><button onClick={() => setProductDraft(p)} className="rounded-full bg-[#1d1d1f] px-4 py-2 text-xs font-bold text-white">Edit</button></div>
+                    <div className="flex items-center gap-4 mb-4"><img src={p.image} alt="" className="h-14 w-14 rounded-2xl object-cover" /><div className="flex-1"><h3 className="font-black">{p.name}</h3><p className="text-xs text-gray-400">{p.category} | Total: {totalStock(p)}</p></div><button onClick={() => setProductDraft({ ...p, details: p.details ?? starterProductDetails(p), gallery: galleryWithExamples(p.gallery, p.galleryCustomized, p.category) })} className="rounded-full bg-[#1d1d1f] px-4 py-2 text-xs font-bold text-white">Edit</button></div>
                     <div className="space-y-2">
                       {vars.map((v) => (
                         <div key={v.color} className="flex items-center gap-4 rounded-2xl bg-gray-50 p-3">
@@ -309,7 +310,7 @@ export default function OwnerDashboard({
             <div className="overflow-hidden rounded-3xl border border-gray-100 bg-white shadow-sm"><div className="overflow-x-auto"><table className="w-full min-w-[820px] text-sm">
               <thead className="bg-gray-50 text-xs uppercase tracking-[0.14em] text-gray-400"><tr><th className="px-5 py-4 text-left">Model</th><th className="px-5 py-4 text-center">Condition</th><th className="px-5 py-4 text-right">Yuan</th><th className="px-5 py-4 text-right">ZMW</th><th className="px-5 py-4 text-right">Shipping</th><th className="px-5 py-4 text-right">Total</th><th className="px-5 py-4 text-right">Actions</th></tr></thead>
               <tbody>{filteredIPhones.map((ip) => (
-                <tr key={ip.id} className="border-t border-gray-100"><td className="px-5 py-4 font-bold">{ip.name}</td><td className="px-5 py-4 text-center"><span className={`rounded-full px-3 py-1 text-xs font-black ${ip.condition === "NEW" ? "bg-green-100 text-green-700" : "bg-blue-100 text-blue-700"}`}>{ip.condition}</span></td><td className="px-5 py-4 text-right text-gray-500">¥{ip.yuanPrice.toLocaleString()}</td><td className="px-5 py-4 text-right">{money(ip.zmwPrice)}</td><td className="px-5 py-4 text-right text-gray-500">{money(ip.shipping)}</td><td className="px-5 py-4 text-right font-black text-[#b08d57]">{money(ip.total)}</td><td className="px-5 py-4 text-right"><button onClick={() => setIPhoneDraft(ip)} className="mr-2 rounded-full bg-gray-100 px-3 py-2 text-xs font-bold">Edit</button><button onClick={() => deleteIPhone(ip.id)} className="rounded-full bg-red-50 px-3 py-2 text-xs font-bold text-red-600">Delete</button></td></tr>
+                <tr key={ip.id} className="border-t border-gray-100"><td className="px-5 py-4 font-bold">{ip.name}</td><td className="px-5 py-4 text-center"><span className={`rounded-full px-3 py-1 text-xs font-black ${ip.condition === "NEW" ? "bg-green-100 text-green-700" : "bg-blue-100 text-blue-700"}`}>{ip.condition}</span></td><td className="px-5 py-4 text-right text-gray-500">¥{ip.yuanPrice.toLocaleString()}</td><td className="px-5 py-4 text-right">{money(ip.zmwPrice)}</td><td className="px-5 py-4 text-right text-gray-500">{money(ip.shipping)}</td><td className="px-5 py-4 text-right font-black text-[#b08d57]">{money(ip.total)}</td><td className="px-5 py-4 text-right"><button onClick={() => setIPhoneDraft({ ...ip, details: ip.details ?? starterPhoneDetails(ip), gallery: galleryWithExamples(ip.gallery, ip.galleryCustomized, "Phones") })} className="mr-2 rounded-full bg-gray-100 px-3 py-2 text-xs font-bold">Edit</button><button onClick={() => deleteIPhone(ip.id)} className="rounded-full bg-red-50 px-3 py-2 text-xs font-bold text-red-600">Delete</button></td></tr>
               ))}</tbody>
             </table></div></div>
           </section>
@@ -368,7 +369,7 @@ export default function OwnerDashboard({
             <h1 className="text-3xl font-black">ROI Analysis</h1>
             <div className="grid gap-4">{products.map((p) => { const m = productMetrics(p); return (
               <div key={p.id} className="rounded-3xl border border-gray-100 bg-white p-5 shadow-sm">
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-center"><img src={p.image} alt="" className="h-20 w-20 rounded-2xl object-cover" /><div className="flex-1"><h2 className="font-black">{p.name}</h2><p className="text-sm text-gray-400">{totalStock(p)} units | cost {money(p.unitCost)} | sell {money(p.unitPrice, 0)}</p></div><div className="rounded-2xl bg-green-50 px-5 py-3 text-right"><p className="text-2xl font-black text-green-600">{m.roi.toFixed(1)}%</p><p className="text-xs font-bold text-green-700">ROI</p></div><button onClick={() => setProductDraft(p)} className="rounded-full bg-[#1d1d1f] px-5 py-3 text-sm font-black text-white">Edit</button></div>
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center"><img src={p.image} alt="" className="h-20 w-20 rounded-2xl object-cover" /><div className="flex-1"><h2 className="font-black">{p.name}</h2><p className="text-sm text-gray-400">{totalStock(p)} units | cost {money(p.unitCost)} | sell {money(p.unitPrice, 0)}</p></div><div className="rounded-2xl bg-green-50 px-5 py-3 text-right"><p className="text-2xl font-black text-green-600">{m.roi.toFixed(1)}%</p><p className="text-xs font-bold text-green-700">ROI</p></div><button onClick={() => setProductDraft({ ...p, details: p.details ?? starterProductDetails(p), gallery: galleryWithExamples(p.gallery, p.galleryCustomized, p.category) })} className="rounded-full bg-[#1d1d1f] px-5 py-3 text-sm font-black text-white">Edit</button></div>
                 <div className="mt-5 grid grid-cols-2 gap-3 text-center sm:grid-cols-4">{[["Cost", money(m.totalCost, 0)], ["Revenue", money(m.revenue, 0)], ["Profit", money(m.profit, 0)], ["Per Unit", money(m.qty > 0 ? m.profit / m.qty : 0, 0)]].map(([l, v]) => <div key={l} className="rounded-2xl bg-gray-50 p-3"><p className="text-xs text-gray-400">{l}</p><p className="font-black">{v}</p></div>)}</div>
               </div>
             ); })}</div>

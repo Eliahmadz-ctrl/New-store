@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import {
   type BusinessSettings,
   type CustomerOrder,
@@ -10,7 +10,8 @@ import {
   variantImage,
   variantStock,
 } from "../data";
-import { cleanGallery } from "../lib/media";
+import { galleryWithExamples } from "../lib/media";
+import { starterProductDetails, starterPhoneDetails } from "../lib/productDetails";
 
 function K(n: number) {
   return `K${n.toLocaleString("en-ZM", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
@@ -42,8 +43,9 @@ function phoneProductFromIPhone(phone: IPhoneModel): Product {
     image: phone.image || "https://images.pexels.com/photos/788946/pexels-photo-788946.jpeg?auto=compress&cs=tinysrgb&fit=crop&h=600&w=600",
     inStock: 10,
     description: phone.description || `${phone.name} in ${phone.condition} condition.`,
-    details: phone.details,
+    details: phone.details ?? starterPhoneDetails(phone),
     gallery: phone.gallery,
+    galleryCustomized: phone.galleryCustomized,
     badge: phone.condition,
     variants: [
       { color: "Black", stock: 3, image: "" },
@@ -52,6 +54,13 @@ function phoneProductFromIPhone(phone: IPhoneModel): Product {
       { color: "Gold", stock: 2, image: "" },
     ],
   };
+}
+
+function ProductPhoto({ src, alt, closeup = false }: { src: string; alt: string; closeup?: boolean }) {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => { setFailed(false); }, [src]);
+  if (!src || failed) return <span className="flex h-full w-full items-center justify-center bg-[#eeeae5] p-4 text-center text-xs text-gray-500">Image unavailable</span>;
+  return <img src={src} alt={alt} onError={() => setFailed(true)} className={`h-full w-full object-cover ${closeup ? "scale-150" : ""}`} />;
 }
 
 export default function StoreFront({
@@ -93,6 +102,20 @@ export default function StoreFront({
     const editableProducts = products.filter((p) => p.id !== "iphone-7-99-product");
     return [...editableProducts, ...iPhones.map(phoneProductFromIPhone)];
   }, [iPhones, products]);
+
+  useEffect(() => {
+    function syncProductFromAddress() {
+      if (!window.location.hash.startsWith("#product/")) { setSelectedProduct(null); return; }
+      let id: string;
+      try { id = decodeURIComponent(window.location.hash.slice("#product/".length)); } catch { return; }
+      const product = storefrontProducts.find(item => item.id === id);
+      if (product) { setSelectedProduct(product); setSelectedColor(getVariants(product)[0].color); setMediaIndex(0); }
+    }
+    syncProductFromAddress();
+    window.addEventListener("popstate", syncProductFromAddress);
+    window.addEventListener("hashchange", syncProductFromAddress);
+    return () => { window.removeEventListener("popstate", syncProductFromAddress); window.removeEventListener("hashchange", syncProductFromAddress); };
+  }, [storefrontProducts]);
 
   const categories = useMemo(
     () => ["All", ...Array.from(new Set(storefrontProducts.map((p) => p.category))).sort()],
@@ -173,6 +196,14 @@ export default function StoreFront({
     setMediaIndex(0);
     setSelectedProduct(product);
     setSelectedColor(getVariants(product)[0].color);
+    window.history.pushState(null, "", `#product/${encodeURIComponent(product.id)}`);
+    window.scrollTo({ top: 0 });
+  }
+
+  function closeProduct() {
+    setSelectedProduct(null);
+    window.history.pushState(null, "", "#shop");
+    window.setTimeout(() => shopRef.current?.scrollIntoView?.(), 0);
   }
 
   async function submitOrder() {
@@ -223,7 +254,8 @@ export default function StoreFront({
     if (element) element.scrollTo({ left: index * element.clientWidth, behavior: "smooth" });
     setMediaIndex(index);
   }
-  const gallery = cleanGallery(selectedProduct?.gallery);
+  const gallery = selectedProduct ? galleryWithExamples(selectedProduct.gallery, selectedProduct.galleryCustomized, selectedProduct.category) : [];
+  const displayGallery = gallery.length ? gallery : (selectedProduct ? [{ type: "image" as const, url: selectedProduct.image, closeup: true }] : []);
   const selectedVariants = selectedProduct ? getVariants(selectedProduct) : [];
   const selectedVariant = selectedVariants.find((v) => v.color === selectedColor);
   const modalImage = selectedProduct
@@ -236,6 +268,7 @@ export default function StoreFront({
 
   return (
     <div className="min-h-screen bg-[#fafafa] text-[#1a1a1a]">
+      {!selectedProduct && <>
       <header className="sticky top-0 z-50 bg-white/85 backdrop-blur-xl border-b border-black/5">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16 sm:h-20">
@@ -387,90 +420,71 @@ export default function StoreFront({
         </div>
       </footer>
 
-      {/* PRODUCT DETAIL MODAL */}
+      </>}
+
+      {/* PRODUCT DETAILS PAGE */}
       {selectedProduct && (
-        <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setSelectedProduct(null)}>
-          <div role="dialog" aria-modal="true" aria-label={`${selectedProduct.name} details`} className="bg-white w-full sm:w-auto sm:max-w-lg sm:rounded-3xl rounded-t-3xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-              <div className="relative aspect-square sm:aspect-[4/3] overflow-hidden sm:rounded-t-3xl bg-gray-100">
-              <div ref={mediaRef} onScroll={(e) => { const el = e.currentTarget; if (el.clientWidth) setMediaIndex(Math.round(el.scrollLeft / el.clientWidth)); }} className="flex overflow-x-auto snap-x snap-mandatory h-full scrollbar-hide">
-                <div className="snap-start w-full flex-shrink-0 h-full">
-                  <img src={modalImage} alt={selectedProduct.name} className="w-full h-full object-cover" />
-                </div>
-                {gallery.map((media, idx) => (
-                  <div key={idx} className="snap-start w-full flex-shrink-0 h-full">
-                    {media.type === "video" ? (
-                      <video src={media.url} controls playsInline preload="metadata" className="w-full h-full object-contain bg-black" />
-                    ) : (
-                      <img src={media.url} alt={`${selectedProduct.name} photo ${idx + 2}`} className="w-full h-full object-cover" />
-                    )}
-                  </div>
-                ))}
-              </div>
-              
-              <button aria-label="Close product details" onClick={() => setSelectedProduct(null)} className="absolute top-4 right-4 w-10 h-10 bg-white/90 backdrop-blur rounded-full flex items-center justify-center z-10">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
-              </button>
-              {selectedProduct.badge && <span className="absolute top-4 left-4 px-3 py-1 text-white text-xs font-bold uppercase tracking-wider rounded-full z-10" style={{ backgroundColor: accent }}>{selectedProduct.badge}</span>}
-              
-              {gallery.length > 0 && <>
-                {mediaIndex > 0 && <button type="button" aria-label="Previous photo or video" onClick={() => goToMedia(mediaIndex - 1)} className="absolute left-3 top-1/2 -translate-y-1/2 z-10 rounded-full bg-white/90 w-10 h-10 font-bold text-xl shadow">‹</button>}
-                {mediaIndex < gallery.length && <button type="button" aria-label="Next photo or video" onClick={() => goToMedia(mediaIndex + 1)} className="absolute right-3 top-1/2 -translate-y-1/2 z-10 rounded-full bg-white/90 w-10 h-10 font-bold text-xl shadow">›</button>}
-                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-1 z-10 rounded-full bg-black/40 px-2 py-1">
-                  {[0, ...gallery.map((_, idx) => idx + 1)].map(index => <button key={index} type="button" aria-label={`View media ${index + 1}`} aria-pressed={mediaIndex === index} onClick={() => goToMedia(index)} className="w-6 h-6 flex items-center justify-center"><span className={`w-2 h-2 rounded-full ${mediaIndex === index ? "bg-white" : "bg-white/50"}`} /></button>)}
-                </div>
-              </>}
-            </div>
-            <div className="p-6 sm:p-8">
-              <p className="text-xs text-gray-400 uppercase tracking-wider">{selectedProduct.category}</p>
-              <h3 className="mt-1 text-2xl font-semibold">{selectedProduct.name}</h3>
-              <p className="mt-3 text-gray-500 leading-relaxed whitespace-pre-line">{selectedProduct.description}</p>
-              {selectedProduct.details && <section className="mt-5 border-t border-gray-100 pt-5"><h4 className="text-sm font-bold">Product information</h4><p className="mt-2 text-sm text-gray-600 leading-relaxed whitespace-pre-line">{selectedProduct.details}</p></section>}
-
-              {/* Colour options with per-colour stock */}
-              <div className="mt-5">
-                <p className="text-xs font-bold uppercase tracking-[0.16em] text-gray-400 mb-3">Choose colour &amp; view stock</p>
-                <div className="space-y-2">
-                  {selectedVariants.map((variant) => {
-                    const active = selectedColor === variant.color;
-                    const inCart = cart.find((i) => i.product.id === selectedProduct.id && i.color === variant.color)?.qty ?? 0;
-                    return (
-                      <button
-                        key={variant.color}
-                        type="button"
-                        onClick={() => setSelectedColor(variant.color)}
-                        className={`w-full flex items-center justify-between rounded-2xl border p-3 text-left transition ${active ? "border-[#1a1a1a] bg-gray-50" : "border-gray-100 bg-white"}`}
-                      >
-                        <div className="flex items-center gap-3">
-                          {variant.image && <img src={variant.image} alt="" className="w-10 h-10 rounded-lg object-cover" />}
-                          <span className={`text-sm font-bold ${active ? "text-[#1a1a1a]" : "text-gray-600"}`}>{variant.color}</span>
-                        </div>
-                        <div className="flex items-center gap-3 text-xs font-bold">
-                          {inCart > 0 && <span className="rounded-full px-2 py-1 text-white" style={{ backgroundColor: accent }}>{inCart} in cart</span>}
-                          <span className={variant.stock > 0 ? "text-green-600" : "text-red-500"}>{variant.stock} left</span>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="mt-6 flex items-center justify-between">
-                <span className="text-3xl font-bold">{K(selectedProduct.unitPrice)}</span>
-                <div className="text-right text-sm">
-                  <p className="font-bold" style={{ color: accent }}>{selectedColor}</p>
-                  <p className={colorStock > 0 ? "text-green-600 font-medium" : "text-red-500 font-medium"}>{colorStock > 0 ? `${colorStock} available` : "Out of stock"}{cartQtyForColor > 0 ? ` (${cartQtyForColor} in cart)` : ""}</p>
-                </div>
-              </div>
-              <button
-                disabled={colorStock <= 0}
-                onClick={() => { addToCart(selectedProduct, selectedColor); }}
-                className="mt-5 w-full py-4 bg-[#1a1a1a] text-white font-semibold rounded-full transition-colors disabled:bg-gray-300"
-              >
-                {colorStock > 0 ? `Add ${selectedColor} to Cart — ${K(selectedProduct.unitPrice)}` : "Out of stock"}
-              </button>
+        <main aria-label={`${selectedProduct.name} details`} className="min-h-screen bg-[#faf9f7]">
+          <div className="border-b border-black/5 bg-white">
+            <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 sm:px-8">
+              <button type="button" onClick={closeProduct} className="rounded-full border border-gray-200 px-4 py-2 text-sm font-semibold hover:bg-gray-50">← Back to shop</button>
+              <span className="text-sm font-semibold tracking-[0.2em]">ELIAH <span style={{ color: accent }}>&amp;</span> CO</span>
+              <button type="button" onClick={() => setCartOpen(true)} className="rounded-full bg-[#1a1a1a] px-4 py-2 text-sm font-semibold text-white">Bag ({cartCount})</button>
             </div>
           </div>
-        </div>
+          <div className="mx-auto max-w-7xl px-4 pb-20 pt-7 sm:px-8 sm:pt-12">
+            <p className="mb-6 text-xs font-medium uppercase tracking-[0.18em] text-gray-400">Shop / {selectedProduct.category} / <span className="text-gray-700">{selectedProduct.name}</span></p>
+            <div className="grid gap-8 lg:grid-cols-[1.1fr_0.9fr] lg:gap-14">
+              <div>
+                <div className="relative aspect-square overflow-hidden rounded-3xl bg-[#eeeae5] sm:aspect-[4/3]">
+                  <div ref={mediaRef} onScroll={(e) => { const el = e.currentTarget; if (el.clientWidth) setMediaIndex(Math.round(el.scrollLeft / el.clientWidth)); }} className="flex h-full overflow-x-auto snap-x snap-mandatory scrollbar-hide">
+                    <div className="snap-start w-full flex-shrink-0 h-full"><ProductPhoto src={modalImage} alt={selectedProduct.name} /></div>
+                    {displayGallery.map((media, idx) => (
+                      <div key={idx} className="relative snap-start w-full flex-shrink-0 h-full overflow-hidden">
+                        {media.type === "video" ? <video src={media.url} controls playsInline preload="metadata" aria-label={`${selectedProduct.name} video`} className="w-full h-full object-contain bg-[#eeeae5]" /> : <ProductPhoto src={"closeup" in media ? modalImage : media.url} alt={"closeup" in media ? `${selectedProduct.name} close-up of main photo` : media.example ? `${selectedProduct.category} illustrative example, not the actual item` : `${selectedProduct.name} photo ${idx + 2}`} closeup={"closeup" in media} />}
+                        {"example" in media && media.example && <span className="absolute bottom-3 left-3 rounded-full bg-white/95 px-3 py-1 text-xs font-semibold text-gray-700">Illustrative example · not the actual item</span>}
+                      </div>
+                    ))}
+                  </div>
+                  {selectedProduct.badge && <span className="absolute top-4 left-4 rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wider text-white" style={{ backgroundColor: accent }}>{selectedProduct.badge}</span>}
+                  {mediaIndex > 0 && <button type="button" aria-label="Previous photo or video" onClick={() => goToMedia(mediaIndex - 1)} className="absolute left-3 top-1/2 -translate-y-1/2 rounded-full bg-white/95 w-10 h-10 font-bold text-xl shadow">‹</button>}
+                  {mediaIndex < displayGallery.length && <button type="button" aria-label="Next photo or video" onClick={() => goToMedia(mediaIndex + 1)} className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full bg-white/95 w-10 h-10 font-bold text-xl shadow">›</button>}
+                </div>
+                <div className="mt-4 flex gap-3 overflow-x-auto pb-2" aria-label="Product media">
+                  {[{ type: "image" as const, url: modalImage }, ...displayGallery].map((media, index) => (
+                    <button key={index} type="button" aria-label={`View media ${index + 1}`} aria-pressed={mediaIndex === index} onClick={() => goToMedia(index)} className={`relative h-20 w-20 flex-shrink-0 overflow-hidden rounded-xl border-2 ${mediaIndex === index ? "border-[#1a1a1a]" : "border-transparent"}`}>
+                      {media.type === "video" ? <span className="flex h-full w-full items-center justify-center bg-[#e8e2da] text-2xl">▶</span> : <ProductPhoto src={"closeup" in media ? modalImage : media.url} alt="" closeup={"closeup" in media} />}
+                      {"example" in media && media.example && <span className="absolute bottom-0 left-0 right-0 bg-white/95 text-[9px] font-bold text-gray-700">Example</span>}
+                    </button>
+                  ))}
+                </div>
+                {!gallery.length && <p className="mt-1 text-xs text-gray-500">The second view is a close-up of the main photo.</p>}
+              </div>
+              <div className="lg:py-2">
+                <p className="text-xs font-semibold uppercase tracking-[0.2em]" style={{ color: accent }}>{selectedProduct.category}</p>
+                <h1 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">{selectedProduct.name}</h1>
+                <p className="mt-3 text-2xl font-bold">{K(selectedProduct.unitPrice)}</p>
+                <p className="mt-5 leading-relaxed text-gray-600 whitespace-pre-line">{selectedProduct.description || "Contact us to learn more about this item."}</p>
+                {(selectedProduct.details ?? starterProductDetails(selectedProduct)) && <section className="mt-7 rounded-2xl bg-white p-5 border border-gray-100"><h2 className="text-sm font-bold uppercase tracking-[0.14em]">Product information</h2><p className="mt-3 text-sm leading-relaxed text-gray-600 whitespace-pre-line">{selectedProduct.details ?? starterProductDetails(selectedProduct)}</p></section>}
+                <div className="mt-7">
+                  <h2 className="mb-3 text-xs font-bold uppercase tracking-[0.16em] text-gray-500">Choose an option &amp; view stock</h2>
+                  <div className="grid gap-2 sm:grid-cols-2">{selectedVariants.map((variant) => {
+                    const active = selectedColor === variant.color;
+                    const inCart = cart.find((i) => i.product.id === selectedProduct.id && i.color === variant.color)?.qty ?? 0;
+                    return <button key={variant.color} type="button" onClick={() => setSelectedColor(variant.color)} aria-pressed={active} className={`flex items-center justify-between gap-2 rounded-2xl border p-3 text-left ${active ? "border-[#1a1a1a] bg-white" : "border-gray-200 bg-white/50"}`}>
+                      <span className="flex items-center gap-2 text-sm font-bold">{variant.image && <img src={variant.image} alt="" className="h-10 w-10 rounded-lg object-cover" />}{variant.color}</span>
+                      <span className={`text-xs font-semibold ${variant.stock > 0 ? "text-green-700" : "text-red-600"}`}>{variant.stock} left{inCart ? ` · ${inCart} in bag` : ""}</span>
+                    </button>;
+                  })}</div>
+                </div>
+                <div className="mt-6 flex items-center justify-between text-sm"><span className="font-semibold">{selectedColor}</span><span className={colorStock > 0 ? "text-green-700" : "text-red-600"}>{colorStock > 0 ? `${colorStock} available` : "Out of stock"}{cartQtyForColor > 0 ? ` (${cartQtyForColor} in bag)` : ""}</span></div>
+                <button disabled={colorStock <= 0} onClick={() => addToCart(selectedProduct, selectedColor)} className="mt-4 w-full rounded-full bg-[#1a1a1a] py-4 font-semibold text-white disabled:bg-gray-300">{colorStock > 0 ? `Add ${selectedColor} to Cart — ${K(selectedProduct.unitPrice)}` : "Out of stock"}</button>
+                <div className="mt-5 rounded-2xl bg-[#f0ebe4] p-5 text-sm text-gray-600"><h2 className="font-bold text-gray-800">Ordering &amp; delivery</h2><p className="mt-2">Choose your delivery location at checkout to see the applicable fee. Questions? <a className="underline" href={`https://wa.me/${cleanWhatsapp}`} target="_blank" rel="noreferrer">Contact us on WhatsApp</a>.</p></div>
+              </div>
+            </div>
+            {storefrontProducts.filter(p => p.id !== selectedProduct.id && p.category === selectedProduct.category).length > 0 && <section className="mt-16 border-t border-gray-200 pt-10"><h2 className="text-2xl font-semibold">You may also like</h2><p className="mt-1 text-sm text-gray-500">Explore more from {selectedProduct.category}.</p><div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3">{storefrontProducts.filter(p => p.id !== selectedProduct.id && p.category === selectedProduct.category).slice(0, 3).map(p => <button key={p.id} onClick={() => openProduct(p)} className="overflow-hidden rounded-2xl bg-white text-left border border-gray-100"><div className="aspect-square bg-gray-100"><ProductPhoto src={p.image} alt={p.name} /></div><div className="p-4"><p className="font-semibold">{p.name}</p><p className="mt-1 text-sm font-bold">{K(p.unitPrice)}</p></div></button>)}</div></section>}
+          </div>
+        </main>
       )}
 
       {/* CART DRAWER */}

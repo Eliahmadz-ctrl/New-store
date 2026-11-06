@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
 import React, { useState } from "react";
-import { cleanGallery, validGallery } from "../src/lib/media";
+import { cleanGallery, validGallery, galleryWithExamples } from "../src/lib/media";
 import { products as defaults, iPhones as defaultPhones, settings, defaultDeliveryLocations, type Product, type IPhoneModel } from "../src/data";
 
 test("gallery validation retains safe URLs and rejects unsafe links", () => {
@@ -11,6 +11,10 @@ test("gallery validation retains safe URLs and rejects unsafe links", () => {
   assert.equal(validGallery(gallery), true);
   assert.equal(validGallery([{ type: "video", url: "javascript:alert(1)" }]), false);
   assert.equal(validGallery([{ type: "image", url: "data:image/png;base64,aGVsbG8=" }]), true);
+  const examples = galleryWithExamples([], false, "Fashion");
+  assert.equal(examples[0].example, true);
+  assert.equal(validGallery(examples), true);
+  assert.deepEqual(galleryWithExamples([], true, "Fashion"), []);
 });
 
 test("owner can save product and phone galleries and shoppers can open them", async () => {
@@ -18,6 +22,7 @@ test("owner can save product and phone galleries and shoppers can open them", as
   Object.assign(globalThis, { window: dom.window, document: dom.window.document, HTMLElement: dom.window.HTMLElement, File: dom.window.File, FileReader: dom.window.FileReader });
   Object.defineProperty(globalThis, "navigator", { value: dom.window.navigator, configurable: true });
   dom.window.HTMLElement.prototype.scrollTo = function() {};
+  dom.window.scrollTo = function() {};
   const { render, fireEvent, cleanup, within } = await import("@testing-library/react");
   const { default: OwnerDashboard } = await import("../src/pages/OwnerDashboard");
   const { default: StoreFront } = await import("../src/pages/StoreFront");
@@ -33,6 +38,9 @@ test("owner can save product and phone galleries and shoppers can open them", as
     const ui = render(<App />);
     fireEvent.click(ui.getByRole("button", { name: "Products" }));
     fireEvent.click(ui.getByRole("button", { name: "Edit" }));
+    assert.match((ui.getByLabelText("More product information (optional)") as HTMLTextAreaElement).value, /part of our Fashion collection/);
+    assert.ok(ui.getByText(/Illustrative example, not the actual item/));
+    fireEvent.click(ui.getByRole("button", { name: "Remove media 1" }));
     fireEvent.change(ui.getByLabelText("More product information (optional)"), { target: { value: "Soft cotton, machine washable" } });
     fireEvent.click(ui.getByRole("button", { name: "Add media" }));
     fireEvent.change(ui.getByLabelText("Image URL"), { target: { value: "https://example.com/photo.jpg" } });
@@ -47,6 +55,8 @@ test("owner can save product and phone galleries and shoppers can open them", as
     fireEvent.click(ui.getByRole("button", { name: "Close" }));
     fireEvent.click(ui.getByRole("button", { name: "Phones" }));
     fireEvent.click(ui.getByRole("button", { name: "Edit" }));
+    assert.ok(ui.getByText(/Illustrative example, not the actual item/));
+    fireEvent.click(ui.getByRole("button", { name: "Remove media 1" }));
     fireEvent.change(ui.getByLabelText("More product information"), { target: { value: "Battery health 99%" } });
     fireEvent.click(ui.getByRole("button", { name: "Add media" }));
     fireEvent.change(ui.getByLabelText("Image URL"), { target: { value: "https://example.com/phone.jpg" } });
@@ -56,17 +66,35 @@ test("owner can save product and phone galleries and shoppers can open them", as
     cleanup();
     const shop = render(<StoreFront products={[savedProduct!]} iPhones={[savedPhone!]} settings={settings} deliveryLocations={defaultDeliveryLocations} onCreateOrder={async () => {}} onSwitchToOwner={() => {}} />);
     fireEvent.click(shop.getAllByRole("button", { name: "View details" })[0]);
-    let dialog = within(shop.getByRole("dialog"));
+    assert.equal(dom.window.location.hash, `#product/${savedProduct!.id}`);
+    assert.equal(shop.queryByRole("dialog"), null);
+    let dialog = within(shop.getByRole("main"));
     assert.ok(dialog.getByText("Soft cotton, machine washable"));
     assert.equal(dialog.getByRole("button", { name: "View media 2" }).getAttribute("aria-pressed"), "false");
     fireEvent.click(dialog.getByRole("button", { name: "View media 2" }));
     assert.equal(dialog.getByRole("button", { name: "View media 2" }).getAttribute("aria-pressed"), "true");
     assert.equal(dialog.getByText("Product information").textContent, "Product information");
     assert.equal(shop.container.querySelector("video")?.getAttribute("src"), "https://example.com/clip.mp4");
-    fireEvent.click(dialog.getByRole("button", { name: "Close product details" }));
+    fireEvent.click(dialog.getByRole("button", { name: /Add .* to Cart/ }));
+    assert.ok(dialog.getByRole("button", { name: "Bag (1)" }));
+    fireEvent.click(dialog.getByRole("button", { name: /Back to shop/ }));
     fireEvent.click(shop.getAllByRole("button", { name: "View details" })[1]);
-    dialog = within(shop.getByRole("dialog"));
+    dialog = within(shop.getByRole("main"));
     assert.ok(dialog.getByText("Battery health 99%"));
     assert.ok(dialog.getByRole("button", { name: "View media 2" }));
+    fireEvent.click(dialog.getByRole("button", { name: /Back to shop/ }));
+    cleanup();
+    dom.window.history.replaceState(null, "", "#product/" + defaults[0].id);
+    const starter = render(<StoreFront products={[defaults[0], defaults[1]]} iPhones={[]} settings={settings} deliveryLocations={defaultDeliveryLocations} onCreateOrder={async () => {}} onSwitchToOwner={() => {}} />);
+    const page = within(starter.getByRole("main"));
+    assert.match(page.getByText(/part of our Fashion collection/).textContent || "", /contact us/i);
+    assert.ok(page.getByText(/Illustrative example · not the actual item/));
+    assert.equal(page.getByRole("img", { name: "Fashion illustrative example, not the actual item" }).getAttribute("src"), "/examples/fashion.jpg");
+    assert.ok(page.getByRole("button", { name: "View media 2" }));
+    fireEvent.click(page.getByRole("button", { name: "View media 2" }));
+    assert.equal(page.getByRole("button", { name: "View media 2" }).getAttribute("aria-pressed"), "true");
+    dom.window.history.pushState(null, "", "#shop");
+    fireEvent(dom.window, new dom.window.PopStateEvent("popstate"));
+    assert.equal(starter.queryByRole("main"), null);
   } finally { cleanup(); dom.window.close(); }
 });

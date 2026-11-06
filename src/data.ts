@@ -1,6 +1,7 @@
 export type MediaItem = {
   type: "image" | "video";
   url: string;
+  example?: boolean; // Explicitly labelled illustrative starter image, not the actual item.
 };
 
 export type ColorVariant = {
@@ -23,6 +24,7 @@ export type Product = {
   badge?: string;
   variants: ColorVariant[];
   gallery?: MediaItem[];
+  galleryCustomized?: boolean;
 };
 
 export type IPhoneModel = {
@@ -37,6 +39,7 @@ export type IPhoneModel = {
   description?: string;
   details?: string;
   gallery?: MediaItem[];
+  galleryCustomized?: boolean;
 };
 
 export type BusinessSettings = {
