@@ -60,6 +60,62 @@ const initialClips = [
   { id: 3, title: 'Closing takeaway', range: [69.5, 81.8], label: '12.3s', color: 'mint' },
 ]
 
+const viralTerms = [
+  ['secret', 15], ['mistake', 14], ['nobody', 13], ['no one', 13], ['truth', 11], ['stop', 10], ['never', 9], ['always', 8], ['exactly', 8], ['instead', 8], ['why', 7], ['how', 7], ['because', 6], ['before', 6], ['after', 6], ['million', 10], ['first', 6], ['best', 6], ['worst', 7], ['changed', 7], ['crazy', 9], ['believe', 6], ['watch', 6], ['listen', 6], ['imagine', 6], ['here\'s', 9], ['this is', 5]
+]
+
+function transcriptEntries(transcript, duration) {
+  const stamped = [...transcript.matchAll(/(?:\[)?(\d{1,2}):(\d{2})(?:\.\d+)?(?:\])?\s*[-–—:]?\s*([^\n]+)/g)]
+  if (stamped.length) return stamped.map((match, index) => ({
+    start: Number(match[1]) * 60 + Number(match[2]),
+    end: index < stamped.length - 1 ? Number(stamped[index + 1][1]) * 60 + Number(stamped[index + 1][2]) : duration,
+    text: match[3].trim(),
+  })).filter((entry) => entry.start < duration && entry.text)
+
+  const sentences = transcript.replace(/\s+/g, ' ').match(/[^.!?]+[.!?]+|[^.!?]+$/g)?.map((sentence) => sentence.trim()).filter(Boolean) || []
+  const chunkSize = Math.max(1, Math.ceil(sentences.length / 8))
+  const chunks = []
+  for (let index = 0; index < sentences.length; index += chunkSize) chunks.push(sentences.slice(index, index + chunkSize).join(' '))
+  return chunks.map((text, index) => ({
+    start: (index / Math.max(1, chunks.length)) * duration,
+    end: ((index + 1) / Math.max(1, chunks.length)) * duration,
+    text,
+  }))
+}
+
+function localViralMoments(transcript, duration) {
+  const entries = transcriptEntries(transcript, duration)
+  const candidates = entries.map((entry, index) => {
+    const copy = entry.text.toLowerCase()
+    const termScore = viralTerms.reduce((score, [term, weight]) => score + (copy.includes(term) ? weight : 0), 0)
+    const numberScore = (copy.match(/\b\d+(?:[,.]\d+)?(?:x|%|k|m)?\b/g) || []).length * 6
+    const contrastScore = /(but|however|instead|actually|wrong|right|yet)/.test(copy) ? 8 : 0
+    const questionScore = /\?/.test(entry.text) ? 7 : 0
+    const energyScore = /!/.test(entry.text) ? 5 : 0
+    const lengthScore = entry.text.length > 45 && entry.text.length < 300 ? 7 : 0
+    const score = Math.min(97, 48 + termScore + numberScore + contrastScore + questionScore + energyScore + lengthScore)
+    const start = Math.max(0, entry.start - Math.min(2.5, entry.start))
+    const end = Math.min(duration, Math.max(start + 9, Math.min(entry.end + 5.5, start + 38)))
+    return {
+      id: `local-${index + 1}`,
+      title: entry.text.split(/[.!?]/)[0].trim().slice(0, 52) || `High-energy moment ${index + 1}`,
+      start: Number(start.toFixed(1)),
+      end: Number(end.toFixed(1)),
+      score,
+      reason: termScore > 10 ? 'Strong curiosity or contrast hook with a clear payoff.' : questionScore ? 'Question-led opening that invites viewers to stay for the answer.' : 'A concise, standalone insight with social-friendly pacing.',
+      caption: entry.text.slice(0, 130),
+    }
+  }).sort((a, b) => b.score - a.score)
+
+  const selected = []
+  for (const candidate of candidates) {
+    const overlaps = selected.some((moment) => candidate.start < moment.end && candidate.end > moment.start)
+    if (!overlaps) selected.push(candidate)
+    if (selected.length === 5) break
+  }
+  return selected
+}
+
 function App() {
   const [activeNav, setActiveNav] = useState('Studio')
   const [clips, setClips] = useState(initialClips)
@@ -74,6 +130,10 @@ function App() {
   const [embedUrl, setEmbedUrl] = useState('')
   const [sourceInputMode, setSourceInputMode] = useState('link')
   const [sourceLink, setSourceLink] = useState('')
+  const [transcriptText, setTranscriptText] = useState('')
+  const [aiMoments, setAiMoments] = useState([])
+  const [analysisStatus, setAnalysisStatus] = useState('idle')
+  const [analysisEngine, setAnalysisEngine] = useState('')
   const [captionText, setCaptionText] = useState('The faster you ship, the faster you learn.')
   const [captionsOn, setCaptionsOn] = useState(true)
   const [captionStyle, setCaptionStyle] = useState('Pop')
@@ -87,6 +147,7 @@ function App() {
   const fileInputRef = useRef(null)
   const objectUrlRef = useRef('')
   const exporterStopRef = useRef(null)
+  const isExportingRef = useRef(false)
 
   const activeClip = clips.find((clip) => clip.id === activeClipId) || clips[0]
   const [clipStart, clipEnd] = activeClip.range
@@ -96,8 +157,9 @@ function App() {
   useEffect(() => {
     const savedProject = window.localStorage.getItem('cliproom-project')
     if (savedProject) setSaved(true)
-    const sharedClip = Number(new URLSearchParams(window.location.hash.slice(1)).get('clip'))
-    if (clips.some((clip) => clip.id === sharedClip)) setActiveClipId(sharedClip)
+    const sharedClip = new URLSearchParams(window.location.hash.slice(1)).get('clip')
+    const matchingSharedClip = clips.find((clip) => String(clip.id) === String(sharedClip))
+    if (matchingSharedClip) setActiveClipId(matchingSharedClip.id)
     return () => {
       if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current)
     }
@@ -138,11 +200,17 @@ function App() {
     if (bound === 'end' && playhead > value) setPlayhead(value)
   }
 
+  function movePlayhead(rawTime) {
+    const nextTime = Math.max(0, Math.min(duration, Number(rawTime)))
+    setPlayhead(nextTime)
+    if (videoRef.current && sourceType !== 'embed') videoRef.current.currentTime = nextTime
+  }
+
   function selectClip(id) {
     const next = clips.find((clip) => clip.id === id)
     if (!next) return
     setActiveClipId(id)
-    setPlayhead(next.range[0])
+    movePlayhead(next.range[0])
   }
 
   function addClip() {
@@ -244,6 +312,72 @@ function App() {
     setNotice(`${file.name} is ready to clip.`)
   }
 
+  function applyAiMoments(moments, engine) {
+    const colors = ['purple', 'gold', 'mint', 'blue', 'purple']
+    const nextClips = moments.map((moment, index) => ({
+      id: `moment-${Date.now()}-${index}`,
+      title: moment.title,
+      range: [moment.start, moment.end],
+      label: `${(moment.end - moment.start).toFixed(1)}s`,
+      color: colors[index % colors.length],
+      score: moment.score,
+      reason: moment.reason,
+      caption: moment.caption,
+    }))
+    if (!nextClips.length) {
+      setNotice('No clear standalone moments were found. Try a longer transcript with timestamps.')
+      return
+    }
+    setAiMoments(moments)
+    setClips(nextClips)
+    setActiveClipId(nextClips[0].id)
+    setPlayhead(nextClips[0].range[0])
+    if (moments[0].caption) setCaptionText(moments[0].caption)
+    setAnalysisEngine(engine)
+    setNotice(`${nextClips.length} high-potential moments are ready to review.`)
+  }
+
+  async function analyzeTranscript() {
+    const transcript = transcriptText.trim()
+    if (!transcript) {
+      setNotice('Paste a transcript or captions first. Timecodes give the AI its best edit points.')
+      return
+    }
+    setAnalysisStatus('analyzing')
+    try {
+      const response = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ transcript, duration }),
+      })
+      if (response.ok) {
+        const data = await response.json()
+        if (Array.isArray(data.moments) && data.moments.length) {
+          applyAiMoments(data.moments, data.engine || 'AI')
+          setAnalysisStatus('done')
+          return
+        }
+      }
+      const localMoments = localViralMoments(transcript, duration)
+      applyAiMoments(localMoments, 'Cliproom smart scoring')
+      setAnalysisStatus('fallback')
+      setNotice('Smart scoring found your moments. Add OPENAI_API_KEY in Vercel for deeper AI editorial ranking.')
+    } catch {
+      const localMoments = localViralMoments(transcript, duration)
+      applyAiMoments(localMoments, 'Cliproom smart scoring')
+      setAnalysisStatus('fallback')
+      setNotice('Smart scoring is running locally because the AI service was unavailable.')
+    }
+  }
+
+  function useMoment(moment, index) {
+    const matchingClip = clips[index]
+    if (!matchingClip) return
+    selectClip(matchingClip.id)
+    if (moment.caption) setCaptionText(moment.caption)
+    setNotice(`Selected “${matchingClip.title}”. Adjust it, preview it, then download your cut.`)
+  }
+
   function onVideoMetadata() {
     const nextDuration = videoRef.current?.duration
     if (Number.isFinite(nextDuration) && nextDuration > 0) {
@@ -257,6 +391,7 @@ function App() {
   }
 
   function onVideoTime() {
+    if (isExportingRef.current) return
     const video = videoRef.current
     if (!video) return
     setPlayhead(video.currentTime)
@@ -324,70 +459,187 @@ function App() {
     URL.revokeObjectURL(anchor.href)
   }
 
+  async function seekVideo(video, time) {
+    if (Math.abs(video.currentTime - time) < 0.05) return
+    await new Promise((resolve, reject) => {
+      const finish = () => { cleanup(); resolve() }
+      const fail = () => { cleanup(); reject(new Error('seek failed')) }
+      const cleanup = () => {
+        video.removeEventListener('seeked', finish)
+        video.removeEventListener('error', fail)
+      }
+      video.addEventListener('seeked', finish, { once: true })
+      video.addEventListener('error', fail, { once: true })
+      video.currentTime = time
+    })
+  }
+
+  function drawClipFrame(context, canvas, video) {
+    const sourceWidth = video.videoWidth || canvas.width
+    const sourceHeight = video.videoHeight || canvas.height
+    const sourceRatio = sourceWidth / sourceHeight
+    const targetRatio = canvas.width / canvas.height
+    let drawWidth = canvas.width
+    let drawHeight = canvas.height
+    let left = 0
+    let top = 0
+
+    if (sourceRatio > targetRatio) {
+      drawWidth = canvas.height * sourceRatio
+      left = (canvas.width - drawWidth) / 2
+    } else {
+      drawHeight = canvas.width / sourceRatio
+      top = (canvas.height - drawHeight) / 2
+    }
+
+    context.fillStyle = '#121217'
+    context.fillRect(0, 0, canvas.width, canvas.height)
+    context.drawImage(video, left, top, drawWidth, drawHeight)
+
+    const gradient = context.createLinearGradient(0, canvas.height * 0.55, 0, canvas.height)
+    gradient.addColorStop(0, 'rgba(0,0,0,0)')
+    gradient.addColorStop(1, 'rgba(0,0,0,.58)')
+    context.fillStyle = gradient
+    context.fillRect(0, 0, canvas.width, canvas.height)
+
+    if (!captionsOn || !captionText.trim()) return
+    const maxWidth = canvas.width * 0.82
+    const fontSize = Math.max(30, Math.round(canvas.width * 0.058))
+    const lineHeight = Math.round(fontSize * 1.16)
+    context.font = `800 ${fontSize}px Inter, Arial, sans-serif`
+    context.textAlign = 'center'
+    context.textBaseline = 'middle'
+    const words = captionText.trim().split(/\s+/)
+    const lines = []
+    let line = ''
+    words.forEach((word) => {
+      const test = line ? `${line} ${word}` : word
+      if (context.measureText(test).width > maxWidth && line) {
+        lines.push(line)
+        line = word
+      } else line = test
+    })
+    if (line) lines.push(line)
+    const visibleLines = lines.slice(-3)
+    const startingY = canvas.height * 0.8 - ((visibleLines.length - 1) * lineHeight) / 2
+    visibleLines.forEach((text, index) => {
+      const y = startingY + index * lineHeight
+      if (captionStyle === 'Pop') {
+        const width = context.measureText(text).width + fontSize * 0.34
+        context.fillStyle = '#ffffff'
+        context.fillRect(canvas.width / 2 - width / 2, y - lineHeight * 0.47, width, lineHeight * 0.94)
+        context.fillStyle = '#25252b'
+        context.fillText(text, canvas.width / 2, y)
+      } else {
+        context.lineWidth = Math.max(4, fontSize * 0.12)
+        context.strokeStyle = 'rgba(0,0,0,.62)'
+        context.strokeText(text, canvas.width / 2, y)
+        context.fillStyle = '#ffffff'
+        context.fillText(text, canvas.width / 2, y)
+      }
+    })
+  }
+
   async function exportCut() {
     if (sourceType === 'embed') {
       downloadClipPlan()
-      setNotice('Your clip plan was downloaded. Embedded links need an uploaded source file for a direct WebM cut.')
+      setNotice('Embedded links can play here, but browsers cannot render them into a file. Upload the video source to download a finished clip.')
       return
     }
     if (!sourceUrl || !videoRef.current) {
       downloadClipPlan()
-      setNotice('A clip plan was downloaded. Paste a direct video URL or upload a source video to export a WebM cut.')
+      setNotice('Add a direct video URL or upload a source file before downloading a finished clip.')
       return
     }
     const video = videoRef.current
-    const stream = video.captureStream?.() || video.mozCaptureStream?.()
-    if (!stream || typeof MediaRecorder === 'undefined') {
+    const sourceStream = video.captureStream?.() || video.mozCaptureStream?.()
+    if (!sourceStream || typeof MediaRecorder === 'undefined' || !HTMLCanvasElement.prototype.captureStream) {
       downloadClipPlan()
-      setNotice('This browser cannot export directly, so your clip plan was downloaded.')
+      setNotice('Your browser cannot render clips directly. Your clip plan was downloaded instead.')
+      return
+    }
+    if (!video.videoWidth || !video.videoHeight) {
+      setNotice('Wait for the video to finish loading, then try the download again.')
       return
     }
 
+    const outputSizes = { '9:16': [720, 1280], '1:1': [1080, 1080], '16:9': [1280, 720], '4:5': [864, 1080] }
+    const [width, height] = outputSizes[aspect.label] || outputSizes['9:16']
+    const canvas = document.createElement('canvas')
+    canvas.width = width
+    canvas.height = height
+    const context = canvas.getContext('2d', { alpha: false })
+    if (!context) return
+
+    const canvasStream = canvas.captureStream(30)
+    const renderedStream = new MediaStream([...canvasStream.getVideoTracks(), ...sourceStream.getAudioTracks()])
     const types = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm']
     const mimeType = types.find((type) => MediaRecorder.isTypeSupported(type))
     const chunks = []
     let recorder
     try {
-      recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined)
+      recorder = new MediaRecorder(renderedStream, mimeType ? { mimeType, videoBitsPerSecond: 5_500_000 } : undefined)
     } catch {
       downloadClipPlan()
-      setNotice('Could not start a direct export. Your clip plan was downloaded.')
+      setNotice('Could not start the clip renderer. Your clip plan was downloaded instead.')
       return
     }
 
-    setIsExporting(true)
-    setExportProgress(0)
-    video.pause()
-    video.currentTime = clipStart
-    await new Promise((resolve) => video.addEventListener('seeked', resolve, { once: true }))
+    let finished = false
+    const finish = () => {
+      if (finished) return
+      finished = true
+      cancelAnimationFrame(exporterStopRef.current)
+      video.pause()
+      if (recorder.state !== 'inactive') recorder.stop()
+    }
 
     recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data) }
+    recorder.onerror = () => {
+      isExportingRef.current = false
+      setIsExporting(false)
+      setNotice('The browser could not render this video. Try uploading the original video file instead.')
+    }
     recorder.onstop = () => {
+      isExportingRef.current = false
       const blob = new Blob(chunks, { type: mimeType || 'video/webm' })
-      const anchor = document.createElement('a')
-      anchor.href = URL.createObjectURL(blob)
-      anchor.download = `${activeClip.title.toLowerCase().replace(/[^a-z0-9]+/g, '-') || 'clip'}.webm`
-      document.body.appendChild(anchor)
-      anchor.click()
-      anchor.remove()
-      window.setTimeout(() => URL.revokeObjectURL(anchor.href), 500)
+      if (blob.size) {
+        const anchor = document.createElement('a')
+        anchor.href = URL.createObjectURL(blob)
+        anchor.download = `${activeClip.title.toLowerCase().replace(/[^a-z0-9]+/g, '-') || 'clip'}.webm`
+        document.body.appendChild(anchor)
+        anchor.click()
+        anchor.remove()
+        window.setTimeout(() => URL.revokeObjectURL(anchor.href), 2000)
+      }
       setIsExporting(false)
       setExportProgress(100)
-      setNotice('Your source cut is ready. Captions and crop settings are saved with the project.')
+      setNotice('Your finished clip is downloading as a WebM, with the selected crop and captions baked in.')
     }
-    recorder.start(250)
-    await video.play()
-    const updateProgress = () => {
-      const progress = Math.min(99, Math.max(0, ((video.currentTime - clipStart) / clipLength) * 100))
-      setExportProgress(progress)
-      if (video.currentTime >= clipEnd || video.ended) {
-        video.pause()
-        if (recorder.state !== 'inactive') recorder.stop()
-      } else {
-        exporterStopRef.current = requestAnimationFrame(updateProgress)
+
+    try {
+      isExportingRef.current = true
+      setIsExporting(true)
+      setExportProgress(0)
+      video.pause()
+      await seekVideo(video, clipStart)
+      drawClipFrame(context, canvas, video)
+      recorder.start(250)
+      await video.play()
+      const render = () => {
+        drawClipFrame(context, canvas, video)
+        const progress = Math.min(99, Math.max(0, ((video.currentTime - clipStart) / clipLength) * 100))
+        setExportProgress(progress)
+        if (video.currentTime >= clipEnd - 0.03 || video.ended) finish()
+        else exporterStopRef.current = requestAnimationFrame(render)
       }
+      exporterStopRef.current = requestAnimationFrame(render)
+    } catch {
+      isExportingRef.current = false
+      setIsExporting(false)
+      if (recorder.state !== 'inactive') recorder.stop()
+      setNotice('Could not render this source. For the most reliable download, use an uploaded MP4 or WebM file.')
     }
-    exporterStopRef.current = requestAnimationFrame(updateProgress)
   }
 
   async function copyLink() {
@@ -427,7 +679,7 @@ function App() {
         <div className="crumbs"><span>{activeNav}</span><Icon name="chevron" size={15}/><strong>{sourceName || sourceFile?.name || 'Untitled clip project'}</strong><span className="save-state">{saved ? 'Saved locally' : 'Unsaved changes'}</span></div>
         <div className="top-actions">
           <button className="button button-ghost" onClick={saveProject}><Icon name="check" size={16}/>{saved ? 'Saved' : 'Save project'}</button>
-          <button className="button button-dark" onClick={exportCut}><Icon name="download" size={16}/>Export cut</button>
+          <button className="button button-dark" onClick={exportCut}><Icon name="download" size={16}/>Download clip</button>
         </div>
       </header>
 
@@ -447,12 +699,12 @@ function App() {
 
           <div className="preview-area">
             <div className={`preview-frame ${sourceUrl || sourceType === 'embed' ? 'has-video' : ''}`} style={{ aspectRatio: aspect.value }}>
-              {sourceType === 'embed' ? <iframe className="source-video embedded-video" src={embedUrl} title={sourceName || 'Linked video preview'} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen /> : sourceUrl ? <video ref={videoRef} src={sourceUrl} onLoadedMetadata={onVideoMetadata} onTimeUpdate={onVideoTime} onError={onVideoError} onPlay={() => setIsPlaying(true)} onPause={() => setIsPlaying(false)} className="source-video" playsInline controls /> : <MockPreview playhead={previewTime} />}
+              {sourceType === 'embed' ? <iframe className="source-video embedded-video" src={embedUrl} title={sourceName || 'Linked video preview'} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen /> : sourceUrl ? <video ref={videoRef} src={sourceUrl} onLoadedMetadata={onVideoMetadata} onTimeUpdate={onVideoTime} onError={onVideoError} onPlay={() => setIsPlaying(true)} onPause={() => setIsPlaying(false)} className="source-video" crossOrigin={sourceType === 'direct' ? 'anonymous' : undefined} playsInline controls /> : <MockPreview playhead={previewTime} />}
               <div className="preview-scrim"></div>
               <div className="preview-brand"><span className="brand-mark small"><span></span><span></span><span></span></span><span>EVERYDAY SYSTEMS</span></div>
               <div className="clip-time-chip">{formatTime(previewTime)}</div>
               {captionsOn && <div className={`caption-layer caption-${captionStyle.toLowerCase()}`}><span>{captionText || 'Add a caption in the panel'}</span></div>}
-              {!sourceUrl && <button className="center-play" onClick={togglePlayback} aria-label="Preview clip"><Icon name={isPlaying ? 'pause' : 'play'} size={25}/></button>}
+              {!sourceUrl && sourceType !== 'embed' && <button className="center-play" onClick={togglePlayback} aria-label="Preview clip"><Icon name={isPlaying ? 'pause' : 'play'} size={25}/></button>}
             </div>
             <p className="preview-hint"><Icon name="lock" size={13}/> Your files stay in this browser until you decide to export.</p>
           </div>
@@ -460,9 +712,9 @@ function App() {
           <section className="timeline-section" aria-label="Clip timeline">
             <div className="timeline-toolbar">
               <div className="transport">
-                <button className="transport-button" onClick={() => setPlayhead(Math.max(0, playhead - 5))} aria-label="Back 5 seconds"><Icon name="back" size={18}/></button>
+                <button className="transport-button" onClick={() => movePlayhead(Math.max(0, playhead - 5))} aria-label="Back 5 seconds"><Icon name="back" size={18}/></button>
                 <button className="play-button" onClick={togglePlayback} aria-label={isPlaying ? 'Pause' : 'Play'}><Icon name={isPlaying ? 'pause' : 'play'} size={17}/></button>
-                <button className="transport-button" onClick={() => setPlayhead(Math.min(duration, playhead + 5))} aria-label="Forward 5 seconds"><Icon name="forward" size={18}/></button>
+                <button className="transport-button" onClick={() => movePlayhead(Math.min(duration, playhead + 5))} aria-label="Forward 5 seconds"><Icon name="forward" size={18}/></button>
                 <span className="time-readout">{formatTime(playhead)} <i>/</i> {formatTime(duration)}</span>
               </div>
               <div className="timeline-actions"><button className="text-button" onClick={() => updateRange('start', playhead)}>Mark in <kbd>I</kbd></button><button className="text-button" onClick={() => updateRange('end', playhead)}>Mark out <kbd>O</kbd></button></div>
@@ -471,7 +723,7 @@ function App() {
               <div className="timeline-ruler"><span>00:00</span><span>00:15</span><span>00:30</span><span>00:45</span><span>01:00</span><span>01:15</span></div>
               <div className="filmstrip" onClick={(event) => {
                 const rect = event.currentTarget.getBoundingClientRect()
-                setPlayhead(Math.max(0, Math.min(duration, ((event.clientX - rect.left) / rect.width) * duration)))
+                movePlayhead(Math.max(0, Math.min(duration, ((event.clientX - rect.left) / rect.width) * duration)))
               }}>
                 {Array.from({ length: 24 }).map((_, index) => <div className={`frame frame-${index % 6}`} key={index}><span>{index % 4 === 0 ? '✦' : ''}</span></div>)}
                 <div className="selected-range" style={{ left: `${clipPercentStart}%`, width: `${clipPercentWidth}%` }}>
@@ -513,6 +765,15 @@ function App() {
               {sourceName && <div className="linked-source"><Icon name="check" size={14}/><span><b>Ready:</b> {sourceName}</span><button type="button" onClick={() => setSourceInputMode(sourceFile ? 'upload' : 'link')}>Change</button></div>}
             </section>
 
+            <section className="panel-section ai-highlights-section">
+              <div className="section-head"><div><h2><span className="ai-title-icon"><Icon name="sparkles" size={14}/></span>AI viral moments</h2><p>{analysisStatus === 'analyzing' ? 'Reading hooks, emotion, and payoff…' : 'Find the lines people will want to share'}</p></div><span className={`ai-status ${analysisStatus}`}>{analysisStatus === 'analyzing' ? 'Analyzing' : analysisEngine || 'Ready'}</span></div>
+              <label className="transcript-label" htmlFor="transcript">Transcript or captions</label>
+              <textarea id="transcript" className="transcript-input" value={transcriptText} onChange={(event) => setTranscriptText(event.target.value)} placeholder={'Paste captions here. Timecodes work best:\n00:12 The mistake almost everyone makes is…\n00:22 Here is what changed everything…'} />
+              <button className="button button-ai full" onClick={analyzeTranscript} disabled={analysisStatus === 'analyzing'}>{analysisStatus === 'analyzing' ? <><span className="tiny-spinner"></span>Finding moments</> : <><Icon name="sparkles" size={15}/>Find viral moments</>}</button>
+              <p className="ai-note">Scores hooks, tension, specificity, emotion, and standalone payoff. Use captions or a transcript for precise cuts.</p>
+              {aiMoments.length > 0 && <div className="ai-results">{aiMoments.slice(0, 3).map((moment, index) => <button className="ai-result" onClick={() => useMoment(moment, index)} key={moment.id || index}><span className="ai-score">{moment.score}</span><span className="ai-result-copy"><b>{moment.title}</b><small>{formatTime(moment.start)} — {formatTime(moment.end)} · {moment.reason}</small></span><Icon name="chevron" size={15}/></button>)}</div>}
+            </section>
+
             <section className="panel-section">
               <div className="section-head"><h2>Format</h2><span className="section-value">{aspect.name}</span></div>
               <div className="format-grid">{ASPECTS.map((item) => <button key={item.label} className={`format-option ${aspect.label === item.label ? 'selected' : ''}`} onClick={() => setAspect(item)}><span className={`ratio ratio-${item.label.replace(':', '-')}`}></span><b>{item.label}</b><small>{item.name}</small></button>)}</div>
@@ -530,7 +791,7 @@ function App() {
               <div className="ai-icon"><Icon name="sparkles" size={16}/></div><div><strong>Find more moments</strong><p>Scan a transcript to turn key thoughts into clips.</p><button onClick={() => { addClip(); setNotice('A new suggested highlight was added to your timeline.') }}>Suggest highlights <Icon name="arrowUp" size={13}/></button></div>
             </section>
           </div>
-          <div className="inspector-footer"><button className="button button-ghost full" onClick={copyLink}><Icon name="copy" size={16}/>{copyLabel}</button><button className="button button-dark full" onClick={exportCut}><Icon name="download" size={16}/>Export cut</button></div>
+          <div className="inspector-footer"><button className="button button-ghost full" onClick={copyLink}><Icon name="copy" size={16}/>{copyLabel}</button><button className="button button-dark full" onClick={exportCut}><Icon name="download" size={16}/>Download clip</button></div>
         </aside>
       </section>
 
