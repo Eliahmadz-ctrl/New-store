@@ -69,6 +69,11 @@ function App() {
   const [isPlaying, setIsPlaying] = useState(false)
   const [sourceFile, setSourceFile] = useState(null)
   const [sourceUrl, setSourceUrl] = useState('')
+  const [sourceName, setSourceName] = useState('')
+  const [sourceType, setSourceType] = useState('demo')
+  const [embedUrl, setEmbedUrl] = useState('')
+  const [sourceInputMode, setSourceInputMode] = useState('link')
+  const [sourceLink, setSourceLink] = useState('')
   const [captionText, setCaptionText] = useState('The faster you ship, the faster you learn.')
   const [captionsOn, setCaptionsOn] = useState(true)
   const [captionStyle, setCaptionStyle] = useState('Pop')
@@ -91,6 +96,8 @@ function App() {
   useEffect(() => {
     const savedProject = window.localStorage.getItem('cliproom-project')
     if (savedProject) setSaved(true)
+    const sharedClip = Number(new URLSearchParams(window.location.hash.slice(1)).get('clip'))
+    if (clips.some((clip) => clip.id === sharedClip)) setActiveClipId(sharedClip)
     return () => {
       if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current)
     }
@@ -148,6 +155,81 @@ function App() {
     setNotice('New highlight created from the playhead.')
   }
 
+  function getEmbedSource(rawLink) {
+    try {
+      const url = new URL(rawLink)
+      const host = url.hostname.replace(/^www\./, '').toLowerCase()
+      let youtubeId = ''
+      if (host === 'youtu.be') youtubeId = url.pathname.split('/').filter(Boolean)[0] || ''
+      if (host === 'youtube.com' || host === 'm.youtube.com') {
+        youtubeId = url.searchParams.get('v') || url.pathname.match(/\/(?:shorts|embed|live)\/([^/?]+)/)?.[1] || ''
+      }
+      if (youtubeId && /^[a-zA-Z0-9_-]{6,}$/.test(youtubeId)) {
+        return { provider: 'YouTube', url: `https://www.youtube.com/embed/${youtubeId}?rel=0&modestbranding=1` }
+      }
+      if (host === 'vimeo.com' || host === 'player.vimeo.com') {
+        const vimeoId = url.pathname.match(/(?:video\/)?(\d+)/)?.[1]
+        if (vimeoId) return { provider: 'Vimeo', url: `https://player.vimeo.com/video/${vimeoId}` }
+      }
+      return null
+    } catch {
+      return null
+    }
+  }
+
+  function handleLinkImport(event) {
+    event.preventDefault()
+    const rawLink = sourceLink.trim()
+    if (!rawLink) {
+      setNotice('Paste a YouTube, Vimeo, or direct video URL first.')
+      return
+    }
+    let parsed
+    try {
+      parsed = new URL(rawLink)
+      if (!['https:', 'http:'].includes(parsed.protocol)) throw new Error('protocol')
+    } catch {
+      setNotice('That does not look like a valid video link. Include https:// and try again.')
+      return
+    }
+    const embedded = getEmbedSource(rawLink)
+    if (embedded) {
+      setSourceFile(null)
+      setSourceUrl('')
+      setSourceType('embed')
+      setEmbedUrl(embedded.url)
+      setSourceName(`${embedded.provider} video`)
+      setNotice(`${embedded.provider} preview loaded. Use its player controls; upload a file for direct WebM exports.`)
+      return
+    }
+    const isDirectVideo = /\.(mp4|webm|mov|m4v|ogv|ogg)(?:$|[?#])/i.test(parsed.pathname + parsed.search)
+    if (!isDirectVideo) {
+      setNotice('This link cannot be imported directly. Use a YouTube/Vimeo link, a direct MP4/WebM/MOV URL, or upload the video file.')
+      return
+    }
+    if (objectUrlRef.current) {
+      URL.revokeObjectURL(objectUrlRef.current)
+      objectUrlRef.current = ''
+    }
+    setSourceFile(null)
+    setEmbedUrl('')
+    setSourceType('direct')
+    setSourceUrl(parsed.href)
+    setSourceName(parsed.hostname.replace(/^www\./, ''))
+    setNotice('Video link added. If it cannot play, download the source and use Upload instead.')
+  }
+
+  async function pasteFromClipboard() {
+    try {
+      const value = await navigator.clipboard.readText()
+      if (!value) throw new Error('empty')
+      setSourceLink(value)
+      setNotice('Link pasted. Select Add link to load it.')
+    } catch {
+      setNotice('Paste access was blocked. Tap the field and paste the link there instead.')
+    }
+  }
+
   function handleUpload(event) {
     const file = event.target.files?.[0]
     if (!file) return
@@ -156,6 +238,9 @@ function App() {
     objectUrlRef.current = nextUrl
     setSourceFile(file)
     setSourceUrl(nextUrl)
+    setEmbedUrl('')
+    setSourceType('file')
+    setSourceName(file.name)
     setNotice(`${file.name} is ready to clip.`)
   }
 
@@ -182,11 +267,19 @@ function App() {
     }
   }
 
+  function onVideoError() {
+    setNotice('This video link cannot play in the browser. Download the video, then use Upload instead.')
+  }
+
   async function togglePlayback() {
+    if (sourceType === 'embed') {
+      setNotice('Use the controls inside the embedded player to preview this link. Upload its video file to cut and export locally.')
+      return
+    }
     const video = videoRef.current
     if (!video || !sourceUrl) {
       setIsPlaying((value) => !value)
-      setNotice('Add a video to preview this cut. Your clip settings are already ready.')
+      setNotice('Paste a video link or upload a file to preview this cut.')
       return
     }
     if (video.paused) {
@@ -213,7 +306,7 @@ function App() {
   function downloadClipPlan() {
     const plan = {
       title: activeClip.title,
-      source: sourceFile?.name || 'Demo source',
+      source: sourceName || sourceFile?.name || 'Demo source',
       in: Number(clipStart.toFixed(2)),
       out: Number(clipEnd.toFixed(2)),
       duration: Number(clipLength.toFixed(2)),
@@ -232,9 +325,14 @@ function App() {
   }
 
   async function exportCut() {
+    if (sourceType === 'embed') {
+      downloadClipPlan()
+      setNotice('Your clip plan was downloaded. Embedded links need an uploaded source file for a direct WebM cut.')
+      return
+    }
     if (!sourceUrl || !videoRef.current) {
       downloadClipPlan()
-      setNotice('A clip plan was downloaded. Add a source video to export a WebM cut.')
+      setNotice('A clip plan was downloaded. Paste a direct video URL or upload a source video to export a WebM cut.')
       return
     }
     const video = videoRef.current
@@ -292,10 +390,16 @@ function App() {
     exporterStopRef.current = requestAnimationFrame(updateProgress)
   }
 
-  function copyLink() {
-    const link = `cliproom.local/clip/${activeClip.id}`
-    navigator.clipboard?.writeText(link)
-    setCopyLabel('Copied!')
+  async function copyLink() {
+    const link = `${window.location.origin}${window.location.pathname}#clip=${activeClip.id}`
+    try {
+      await navigator.clipboard.writeText(link)
+      setCopyLabel('Copied!')
+      setNotice('A working Cliproom link is on your clipboard.')
+    } catch {
+      window.prompt('Copy this Cliproom link:', link)
+      setCopyLabel('Link ready')
+    }
     window.setTimeout(() => setCopyLabel('Copy link'), 1500)
   }
 
@@ -320,7 +424,7 @@ function App() {
 
     <main className="workspace">
       <header className="topbar">
-        <div className="crumbs"><span>{activeNav}</span><Icon name="chevron" size={15}/><strong>{sourceFile?.name || 'Untitled clip project'}</strong><span className="save-state">{saved ? 'Saved locally' : 'Unsaved changes'}</span></div>
+        <div className="crumbs"><span>{activeNav}</span><Icon name="chevron" size={15}/><strong>{sourceName || sourceFile?.name || 'Untitled clip project'}</strong><span className="save-state">{saved ? 'Saved locally' : 'Unsaved changes'}</span></div>
         <div className="top-actions">
           <button className="button button-ghost" onClick={saveProject}><Icon name="check" size={16}/>{saved ? 'Saved' : 'Save project'}</button>
           <button className="button button-dark" onClick={exportCut}><Icon name="download" size={16}/>Export cut</button>
@@ -342,8 +446,8 @@ function App() {
           </div>
 
           <div className="preview-area">
-            <div className={`preview-frame ${sourceUrl ? 'has-video' : ''}`} style={{ aspectRatio: aspect.value }}>
-              {sourceUrl ? <video ref={videoRef} src={sourceUrl} onLoadedMetadata={onVideoMetadata} onTimeUpdate={onVideoTime} onPlay={() => setIsPlaying(true)} onPause={() => setIsPlaying(false)} className="source-video" playsInline /> : <MockPreview playhead={previewTime} />}
+            <div className={`preview-frame ${sourceUrl || sourceType === 'embed' ? 'has-video' : ''}`} style={{ aspectRatio: aspect.value }}>
+              {sourceType === 'embed' ? <iframe className="source-video embedded-video" src={embedUrl} title={sourceName || 'Linked video preview'} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen /> : sourceUrl ? <video ref={videoRef} src={sourceUrl} onLoadedMetadata={onVideoMetadata} onTimeUpdate={onVideoTime} onError={onVideoError} onPlay={() => setIsPlaying(true)} onPause={() => setIsPlaying(false)} className="source-video" playsInline controls /> : <MockPreview playhead={previewTime} />}
               <div className="preview-scrim"></div>
               <div className="preview-brand"><span className="brand-mark small"><span></span><span></span><span></span></span><span>EVERYDAY SYSTEMS</span></div>
               <div className="clip-time-chip">{formatTime(previewTime)}</div>
@@ -390,13 +494,23 @@ function App() {
           <div className="inspector-tabs"><button className="active">Clip</button><button onClick={() => setNotice('Brand presets are part of your next export settings.')}>Brand</button></div>
           <div className="inspector-scroll">
             <section className="panel-section source-section">
-              <div className="section-head"><h2>Source</h2><button className="text-button" onClick={() => fileInputRef.current?.click()}>{sourceFile ? 'Replace' : 'Upload'}</button></div>
+              <div className="section-head"><div><h2>Add a source</h2><p>Paste a link or upload a file</p></div></div>
+              <div className="source-mode-toggle" role="tablist" aria-label="Source type">
+                <button className={sourceInputMode === 'link' ? 'active' : ''} onClick={() => setSourceInputMode('link')} role="tab" aria-selected={sourceInputMode === 'link'}><Icon name="copy" size={13}/>Paste link</button>
+                <button className={sourceInputMode === 'upload' ? 'active' : ''} onClick={() => setSourceInputMode('upload')} role="tab" aria-selected={sourceInputMode === 'upload'}><Icon name="arrowUp" size={13}/>Upload</button>
+              </div>
               <input ref={fileInputRef} type="file" accept="video/*" onChange={handleUpload} hidden />
-              <button className={`source-card ${sourceFile ? 'loaded' : ''}`} onClick={() => fileInputRef.current?.click()}>
+              {sourceInputMode === 'link' ? <form className="link-import" onSubmit={handleLinkImport}>
+                <label htmlFor="video-link">Video link</label>
+                <div className="link-input-row"><input id="video-link" type="url" value={sourceLink} onChange={(event) => setSourceLink(event.target.value)} placeholder="Paste YouTube, Vimeo, or video URL" autoComplete="url" /><button type="button" className="paste-button" onClick={pasteFromClipboard}>Paste</button></div>
+                <button className="button button-dark link-submit" type="submit"><Icon name="arrowUp" size={15}/>Add link</button>
+                <p className="link-help">YouTube and Vimeo open in the preview. Direct MP4, MOV, and WebM links can be clipped here.</p>
+              </form> : <button className={`source-card ${sourceFile ? 'loaded' : ''}`} onClick={() => fileInputRef.current?.click()}>
                 <div className="source-thumb"><Icon name={sourceFile ? 'video' : 'arrowUp'} size={20}/></div>
-                <div><strong>{sourceFile?.name || 'Drop a video here'}</strong><span>{sourceFile ? `${(sourceFile.size / 1024 / 1024).toFixed(1)} MB · local file` : 'MP4, MOV or WebM'}</span></div>
+                <div><strong>{sourceFile?.name || 'Choose a video file'}</strong><span>{sourceFile ? `${(sourceFile.size / 1024 / 1024).toFixed(1)} MB · local file` : 'MP4, MOV or WebM'}</span></div>
                 <Icon name="chevron" size={16}/>
-              </button>
+              </button>}
+              {sourceName && <div className="linked-source"><Icon name="check" size={14}/><span><b>Ready:</b> {sourceName}</span><button type="button" onClick={() => setSourceInputMode(sourceFile ? 'upload' : 'link')}>Change</button></div>}
             </section>
 
             <section className="panel-section">
